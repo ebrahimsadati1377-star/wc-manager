@@ -1,0 +1,13 @@
+public/uploads/
+config/config.php
+.env
+.env.*
+logs/
+*.log
+vendor/
+node_modules/
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+*.backup

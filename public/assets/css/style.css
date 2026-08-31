@@ -1,0 +1,109 @@
+/* --- 1. تنظیمات عمومی و فونت --- */
+body {
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+    background-color: #f4f6f9;
+    color: #333;
+}
+
+/* --- 2. استایل‌های مدرن جهانی (Global Modern Styles) --- */
+.card {
+    border: none; 
+    border-radius: 12px; 
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+    transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.card:hover { 
+    box-shadow: 0 8px 15px rgba(0,0,0,0.1); 
+}
+
+.btn { 
+    border-radius: 8px; 
+    padding: 10px 20px; 
+    font-weight: 600; 
+    transition: 0.3s; 
+}
+
+.form-control, .form-select { 
+    border-radius: 8px; 
+    border: 1px solid #dee2e6; 
+    padding: 12px; 
+}
+.form-control:focus { 
+    border-color: #0d6efd; 
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1); 
+}
+
+.table thead { background-color: #f1f3f5; }
+.table td, .table th { vertical-align: middle; padding: 15px; }
+
+/* --- 3. کارت‌های عملیاتی (Action Cards) --- */
+.action-card {
+    transition: transform .15s ease, box-shadow .15s ease;
+    color: #333;
+    text-decoration: none;
+}
+.action-card:hover {
+    transform: translateY(-3px);
+}
+
+.stat-card {
+    border: none;
+    border-radius: 12px;
+}
+
+/* --- 4. گالری تصاویر (Product Gallery) --- */
+.gallery-wrap { display: flex; flex-wrap: wrap; gap: 10px; }
+.gallery-item {
+    position: relative;
+    width: 110px; height: 110px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: grab;
+    background: #fff;
+}
+.gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+.gallery-item .featured-badge {
+    position: absolute; top: 4px; right: 4px;
+    background: #198754; color: #fff; font-size: 10px;
+    padding: 1px 6px; border-radius: 4px;
+}
+.gallery-item .remove-btn {
+    position: absolute; top: 4px; left: 4px;
+    background: rgba(220,53,69,.9); color: #fff;
+    border: none; border-radius: 50%;
+    width: 22px; height: 22px; font-size: 13px; cursor: pointer;
+}
+.gallery-add {
+    width: 110px; height: 110px;
+    border: 2px dashed #bbb; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #888; cursor: pointer; font-size: 28px; background: #fafafa;
+}
+.gallery-add:hover { background: #f0f0f0; }
+
+/* --- 5. ویژگی‌ها و متغیرها (Attributes & Variations) --- */
+.attr-row {
+    border: 1px solid #e2e2e2;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+    background: #fbfbfd;
+}
+.variation-row img.var-thumb {
+    width: 54px; height: 54px; object-fit: cover; border-radius: 6px;
+    border: 1px solid #ddd; cursor: pointer;
+}
+
+.thumb-sm { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; }
+.thumb-md { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+
+.badge-type-variable { background: #6f42c1; color: white; }
+.badge-type-simple { background: #0d6efd; color: white; }
+
+/* --- 6. اسپینر بارگذاری --- */
+.spinner-overlay {
+    position: fixed; inset: 0; background: rgba(255,255,255,.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2000;
+}
