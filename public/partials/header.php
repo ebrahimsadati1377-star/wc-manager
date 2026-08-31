@@ -7,11 +7,42 @@ $user = Auth::user();
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="<?= e(csrfToken()) ?>">
 <title><?= e($pageTitle ?? APP_NAME) ?> | <?= e(APP_NAME) ?></title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link rel="stylesheet" href="assets/css/style.css">
+<script>
+(() => {
+  const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const nativeFetch = window.fetch.bind(window);
+
+  window.fetch = (input, init = {}) => {
+    const requestMethod = init.method || (input instanceof Request ? input.method : 'GET');
+    const method = String(requestMethod).toUpperCase();
+
+    if (token && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      try {
+        const rawUrl = typeof input === 'string' || input instanceof URL ? input : input.url;
+        const target = new URL(rawUrl, window.location.href);
+        if (target.origin === window.location.origin) {
+          const baseHeaders = init.headers || (input instanceof Request ? input.headers : undefined);
+          const headers = new Headers(baseHeaders || {});
+          if (!headers.has('X-CSRF-Token')) {
+            headers.set('X-CSRF-Token', token);
+          }
+          init = { ...init, headers };
+        }
+      } catch (error) {
+        console.error('Unable to attach CSRF token to request.', error);
+      }
+    }
+
+    return nativeFetch(input, init);
+  };
+})();
+</script>
 </head>
 <body>
 <?php if ($user): ?>
@@ -35,7 +66,12 @@ $user = Auth::user();
         <li class="nav-item d-flex align-items-center text-light me-3">
           <span class="small">👤 <?= e($user['full_name']) ?> <span class="badge bg-secondary"><?= $user['role'] === 'admin' ? 'مدیر' : 'ویرایشگر' ?></span></span>
         </li>
-        <li class="nav-item"><a class="nav-link" href="logout.php">خروج</a></li>
+        <li class="nav-item d-flex align-items-center">
+          <form action="logout.php" method="post" class="m-0">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <button type="submit" class="nav-link btn btn-link border-0 p-0">خروج</button>
+          </form>
+        </li>
       </ul>
     </div>
   </div>
