@@ -4,6 +4,14 @@ require_once __DIR__ . '/../config/config.php';
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
+// The management panel is a production-facing web app. PHP warnings and stack
+// details must go to server logs, never into HTML/JSON responses.
+if (PHP_SAPI !== 'cli') {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+    ini_set('log_errors', '1');
+}
+
 // Apply native session defaults when config.php has not started the session yet.
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.use_strict_mode', '1');
