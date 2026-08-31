@@ -1,57 +1,41 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
 Auth::requireLogin();
-header('Content-Type: application/json; charset=utf-8');
+requirePostAndCsrfOrFail();
 
-// دریافت نام دسته‌بندی
-$categoryName = isset($_POST['category_name']) ? trim($_POST['category_name']) : '';
+$categoryName = trim((string)($_POST['category_name'] ?? ''));
+if ($categoryName === '') {
+    jsonResponse(['success' => false, 'message' => 'نام دسته‌بندی نمی‌تواند خالی باشد.'], 422);
+}
 
-if (empty($categoryName)) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'نام دسته‌بندی نمی‌تواند خالی باشد.'
-    ]);
-    exit;
+if (mb_strlen($categoryName, 'UTF-8') > 200) {
+    jsonResponse(['success' => false, 'message' => 'نام دسته‌بندی بیش از حد طولانی است.'], 422);
 }
 
 try {
     $wc = new WooCommerceClient();
-
-    // بررسی اتصال به وردپرس
     if (!$wc->isWpConfigured()) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'تنظیمات اتصال به وردپرس تنظیم نشده است.'
-        ]);
-        exit;
+        jsonResponse(['success' => false, 'message' => 'تنظیمات اتصال به وردپرس کامل نیست.'], 422);
     }
 
-    // ساخت دسته‌بندی جدید
     $result = $wc->createPostCategory($categoryName);
-
     if (!empty($result['error'])) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'خطا در ساخت دسته‌بندی: ' . $result['error']
-        ]);
-        exit;
+        error_log('[wc-manager] create post category failed: ' . $result['error']);
+        jsonResponse(['success' => false, 'message' => 'ساخت دسته‌بندی در وردپرس ناموفق بود.'], 502);
     }
 
     $newCategory = $result['body'] ?? [];
+    logActivity('create_post_category', 'post_category', (string)($newCategory['id'] ?? ''));
 
-    echo json_encode([
+    jsonResponse([
         'success' => true,
         'message' => 'دسته‌بندی با موفقیت ایجاد شد.',
         'category' => [
-            'id' => $newCategory['id'] ?? 0,
-            'name' => $newCategory['name'] ?? $categoryName
-        ]
+            'id' => (int)($newCategory['id'] ?? 0),
+            'name' => (string)($newCategory['name'] ?? $categoryName),
+        ],
     ]);
-
-} catch (Exception $e) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'خطای سیستمی: ' . $e->getMessage()
-    ]);
+} catch (Throwable $e) {
+    error_log('[wc-manager] create post category exception: ' . $e->getMessage());
+    jsonResponse(['success' => false, 'message' => 'خطای داخلی هنگام ساخت دسته‌بندی رخ داد.'], 500);
 }
-exit;
