@@ -23,17 +23,14 @@ if ($isEdit) {
     }
     $product = $res['body'];
 
-    // Get video attachment ID from meta_data
     if (!empty($product['meta_data']) && is_array($product['meta_data'])) {
         foreach ($product['meta_data'] as $meta) {
             if (($meta['key'] ?? '') === '_bajistyle_product_video_id') {
                 $videoAttachmentId = (int)($meta['value'] ?? 0);
                 break;
             }
-            // Fallback to old meta key
             if (($meta['key'] ?? '') === '_product_video_url' && !$videoAttachmentId) {
-                // If it's a URL, we can't use it directly, but we keep for display
-                // For now, just skip - we use attachment ID
+                // Legacy URL meta is kept only for backward compatibility.
             }
         }
     }
@@ -46,7 +43,6 @@ if ($isEdit) {
     }
 }
 
-// دسته‌بندی‌ها
 $catRes = $wc->getCategories(['per_page' => 100, 'orderby' => 'name', 'order' => 'asc']);
 $allCategories = $catRes['error'] ? [] : $catRes['body'];
 
@@ -64,7 +60,6 @@ function buildCatTree(array $cats, int $parent = 0, int $depth = 0): array
 }
 $catTree = buildCatTree($allCategories);
 
-// ویژگی‌های سراسری (global attributes) موجود در ووکامرس
 $attrRes = $wc->getAttributes();
 $globalAttributes = $attrRes['error'] ? [] : $attrRes['body'];
 
@@ -74,9 +69,112 @@ $pageTitle = $isEdit ? 'ویرایش محصول' : 'افزودن محصول جد
 require __DIR__ . '/partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<style>
+.product-edit-header { gap: .75rem; }
+.product-edit-header h3 { overflow-wrap: anywhere; line-height: 1.6; }
+.product-edit-card { border: 0; box-shadow: 0 .125rem .35rem rgba(0,0,0,.04); }
+.product-type-toggle .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+.variation-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.variation-actions .btn { min-height: 40px; }
+.video-section { border-top: 1px solid #eef0f2; padding: 1rem; }
+.video-preview { width: 100%; height: auto; max-height: 320px; border-radius: .65rem; background: #000; }
+.category-scroll { max-height: 300px; overflow-y: auto; }
+.category-scroll .form-check { min-height: 36px; display: flex; align-items: center; gap: .35rem; }
+.category-scroll .form-check-input { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; }
+.save-panel { position: relative; z-index: 10; }
+.attr-row { padding: .85rem 0; border-bottom: 1px solid #eef0f2; }
+.attr-row:first-child { padding-top: 0; }
+.attr-row:last-child { border-bottom: 0; }
+#variationsWrap .var-thumb { cursor: pointer; }
+
+@media (max-width: 767.98px) {
+    body { padding-bottom: 88px; }
+    .product-edit-header { flex-direction: column; align-items: stretch !important; margin-bottom: 1rem !important; }
+    .product-edit-header h3 { font-size: 1.15rem; }
+    .product-edit-header .btn { width: 100%; min-height: 44px; }
+    #productForm > .row { --bs-gutter-y: 1rem; }
+    .product-edit-card { margin-bottom: 1rem !important; border-radius: .9rem; }
+    .product-edit-card .card-header { padding: .85rem 1rem; }
+    .product-edit-card .card-body { padding: 1rem; }
+    .product-edit-card .form-control,
+    .product-edit-card .form-select,
+    #bulkEditSection .form-control,
+    #bulkEditSection .btn { min-height: 44px; }
+
+    .product-type-toggle { display: grid !important; grid-template-columns: 1fr 1fr; width: 100%; }
+    .product-type-toggle .btn { width: 100%; border-radius: .5rem !important; }
+
+    .attributes-header { flex-direction: column; align-items: stretch !important; gap: .65rem; }
+    .attributes-header .btn { min-height: 44px; width: 100%; }
+    .attr-row { padding: 1rem; margin-bottom: .75rem; border: 1px solid #e9ecef; border-radius: .8rem; background: #fff; }
+    .attr-row .pt-4 { padding-top: .5rem !important; }
+    .attr-row .remove-attr-btn { min-height: 44px; }
+    .attr-row .form-check { min-height: 44px; display: flex; align-items: center; gap: .35rem; }
+
+    .variations-header { flex-direction: column; align-items: stretch !important; }
+    .variation-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+    .variation-actions .btn { min-height: 44px; width: 100%; white-space: normal; }
+    .variation-actions #saveAllVariationsBtn { grid-column: 1 / -1; }
+    #bulkEditSection { padding: 1rem !important; }
+
+    #variationsWrap .table-responsive { overflow: visible; }
+    #variationsWrap .variation-table,
+    #variationsWrap .variation-table tbody,
+    #variationsWrap .variation-table tr,
+    #variationsWrap .variation-table td { display: block; width: 100%; }
+    #variationsWrap .variation-table thead { display: none; }
+    #variationsWrap .variation-table { margin: 0; }
+    #variationsWrap .variation-row { border: 1px solid #e5e7eb; border-radius: .85rem; padding: .85rem; margin-bottom: .85rem; background: #fff; box-shadow: 0 .125rem .25rem rgba(0,0,0,.03); }
+    #variationsWrap .variation-row td { border: 0; padding: .42rem 0; display: grid; grid-template-columns: minmax(88px, .75fr) minmax(0, 1.25fr); align-items: center; gap: .6rem; text-align: right !important; }
+    #variationsWrap .variation-row td::before { color: #6c757d; font-size: .78rem; font-weight: 600; }
+    #variationsWrap .variation-row td:nth-child(1)::before { content: 'تصویر'; }
+    #variationsWrap .variation-row td:nth-child(2)::before { content: 'ترکیب'; }
+    #variationsWrap .variation-row td:nth-child(3)::before { content: 'SKU'; }
+    #variationsWrap .variation-row td:nth-child(4)::before { content: 'قیمت اصلی'; }
+    #variationsWrap .variation-row td:nth-child(5)::before { content: 'قیمت حراج'; }
+    #variationsWrap .variation-row td:nth-child(6)::before { content: 'موجودی'; }
+    #variationsWrap .variation-row td:nth-child(7)::before { content: 'فعال'; }
+    #variationsWrap .variation-row td:nth-child(8)::before { content: 'عملیات'; }
+    #variationsWrap .variation-row .form-control { min-height: 44px; width: 100% !important; }
+    #variationsWrap .variation-row .form-check-input { width: 1.3rem; height: 1.3rem; }
+    #variationsWrap .variation-row td:last-child { grid-template-columns: 88px 1fr 1fr; }
+    #variationsWrap .variation-row td:last-child .btn { min-height: 44px; }
+    #variationsWrap .var-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: .6rem; }
+
+    .gallery-wrap { gap: .65rem; }
+    .gallery-item, .gallery-add { width: 88px; height: 110px; }
+    .video-section .input-group { display: grid; grid-template-columns: 1fr; gap: .5rem; }
+    .video-section .input-group > .form-control,
+    .video-section .input-group > .btn { width: 100%; min-height: 44px; border-radius: .5rem !important; }
+
+    .category-scroll { max-height: 240px; }
+    .save-panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: .65rem max(.75rem, env(safe-area-inset-right)) calc(.65rem + env(safe-area-inset-bottom)) max(.75rem, env(safe-area-inset-left));
+        background: rgba(255,255,255,.96);
+        border-top: 1px solid #e5e7eb;
+        box-shadow: 0 -.25rem .75rem rgba(0,0,0,.08);
+        backdrop-filter: blur(8px);
+    }
+    .save-panel #saveProductBtn { min-height: 48px; }
+    .save-panel #saveResultMsg { text-align: center; margin-top: .25rem; }
+}
+
+@media (max-width: 390px) {
+    .variation-actions { grid-template-columns: 1fr; }
+    .variation-actions #saveAllVariationsBtn { grid-column: auto; }
+    #variationsWrap .variation-row td,
+    #variationsWrap .variation-row td:last-child { grid-template-columns: 1fr; }
+    #variationsWrap .variation-row td::before { margin-bottom: .15rem; }
+}
+</style>
+
+<div class="product-edit-header d-flex justify-content-between align-items-center mb-4 flex-wrap">
   <h3 class="mb-0"><?= $isEdit ? 'ویرایش محصول: ' . e($product['name']) : 'افزودن محصول جدید' ?></h3>
-  <a href="products.php" class="btn btn-outline-secondary btn-sm">بازگشت به لیست</a>
+  <a href="products.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-right ms-1"></i> بازگشت به لیست</a>
 </div>
 
 <form id="productForm">
@@ -84,8 +182,7 @@ require __DIR__ . '/partials/header.php';
   <div class="row g-4">
     <div class="col-lg-8">
 
-      <!-- اطلاعات پایه -->
-      <div class="card mb-4">
+      <div class="card product-edit-card mb-4">
         <div class="card-header fw-bold">اطلاعات پایه</div>
         <div class="card-body">
           <div class="mb-3">
@@ -118,13 +215,12 @@ require __DIR__ . '/partials/header.php';
         </div>
       </div>
 
-      <!-- نوع محصول و قیمت‌گذاری -->
-      <div class="card mb-4">
+      <div class="card product-edit-card mb-4">
         <div class="card-header fw-bold">نوع محصول و قیمت‌گذاری</div>
         <div class="card-body">
           <div class="mb-3">
             <label class="form-label d-block">نوع محصول</label>
-            <div class="btn-group" role="group">
+            <div class="btn-group product-type-toggle" role="group">
               <input type="radio" class="btn-check" name="f_type" id="type_simple" value="simple" <?= ($product['type'] ?? 'simple') === 'simple' ? 'checked' : '' ?>>
               <label class="btn btn-outline-primary" for="type_simple">ساده (Simple)</label>
               <input type="radio" class="btn-check" name="f_type" id="type_variable" value="variable" <?= ($product['type'] ?? '') === 'variable' ? 'checked' : '' ?>>
@@ -164,11 +260,10 @@ require __DIR__ . '/partials/header.php';
         </div>
       </div>
 
-      <!-- ویژگی‌ها -->
-      <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card product-edit-card mb-4">
+        <div class="card-header attributes-header d-flex justify-content-between align-items-center">
           <span class="fw-bold">ویژگی‌ها (Attributes)</span>
-          <button type="button" class="btn btn-sm btn-outline-primary" id="addAttrBtn">➕ افزودن ویژگی</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="addAttrBtn"><i class="fas fa-plus ms-1"></i> افزودن ویژگی</button>
         </div>
         <div class="card-body">
           <div id="attributesWrap"></div>
@@ -176,10 +271,10 @@ require __DIR__ . '/partials/header.php';
         </div>
       </div>
 
-      <div class="card mb-4" id="variationsCard" style="display:none;">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="card product-edit-card mb-4" id="variationsCard" style="display:none;">
+        <div class="card-header variations-header d-flex justify-content-between align-items-center flex-wrap gap-2">
           <span class="fw-bold">تنوع‌های محصول (Variations)</span>
-          <div class="d-flex gap-2">
+          <div class="variation-actions">
             <button type="button" class="btn btn-sm btn-outline-secondary" id="toggleBulkBtn">🛠️ تغییر دسته‌جمعی</button>
             <button type="button" class="btn btn-sm btn-primary" id="genVariationsBtn">🔄 تولید ترکیب‌های جدید</button>
             <button type="button" class="btn btn-sm btn-success" id="saveAllVariationsBtn">💾 ذخیره تغییرات تمام تنوع‌ها</button>
@@ -189,7 +284,6 @@ require __DIR__ . '/partials/header.php';
           <?php if (!$isEdit): ?>
             <div class="alert alert-info mb-0">ابتدا محصول را ذخیره کنید تا بتوانید تنوع‌ها را مدیریت کنید.</div>
           <?php else: ?>
-            
             <div id="bulkEditSection" class="p-3 mb-3 bg-light rounded border" style="display: none;">
               <h6 class="mb-3 fw-bold text-secondary">⚡ اعمال تغییرات روی تمام ۲۰+ تنوع به صورت یکجا:</h6>
               <div class="row g-2 align-items-end">
@@ -215,41 +309,37 @@ require __DIR__ . '/partials/header.php';
           <?php endif; ?>
         </div>
       </div>
-
     </div>
 
     <div class="col-lg-4">
-      <!-- تصاویر -->
-      <div class="card mb-4">
+      <div class="card product-edit-card mb-4">
         <div class="card-header fw-bold">تصاویر محصول</div>
         <div class="card-body">
           <div class="gallery-wrap" id="galleryWrap"></div>
           <input type="file" id="galleryFileInput" accept="image/*" multiple class="d-none">
           <p class="text-muted small mt-2 mb-0">اولین تصویر به‌عنوان تصویر شاخص نمایش داده می‌شود. برای تغییر ترتیب، تصاویر را جابه‌جا کنید.</p>
         </div>
-        <div class="mb-3">
-  <label class="form-label small">ویدیوی محصول</label>
-  <div class="input-group">
-    <input type="text" id="f_video_url" class="form-control form-control-sm" placeholder="شناسه ویدیو در کتابخانه رسانه" readonly value="<?= (int)$videoAttachmentId ?: '' ?>">
+        <div class="video-section">
+          <label class="form-label small fw-semibold">ویدیوی محصول</label>
+          <div class="input-group">
+            <input type="text" id="f_video_url" class="form-control form-control-sm" placeholder="شناسه ویدیو در کتابخانه رسانه" readonly value="<?= (int)$videoAttachmentId ?: '' ?>">
+            <input type="file" id="videoFileInput" class="d-none" accept="video/*">
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="uploadVideoBtn">انتخاب و آپلود ویدیو</button>
+          </div>
+          <small class="text-muted d-block mt-2" id="videoUploadMsg"></small>
 
-    <input type="file" id="videoFileInput" class="d-none" accept="video/*">
-    <button class="btn btn-sm btn-outline-secondary" type="button" id="uploadVideoBtn">انتخاب و آپلود ویدیو</button>
-  </div>
-  <small class="text-muted" id="videoUploadMsg"></small>
-
-  <?php if ($videoAttachmentId > 0): ?>
-    <div class="mt-2">
-      <video controls style="max-width:100%; height:auto; border-radius:8px;" src="<?= e($wc->getBaseUrl() . '/wp-json/wp/v2/media/' . $videoAttachmentId) ?>?fields=source_url" preload="metadata"></video>
-      <p class="text-muted small mt-1">ویدیو در کتابخانه رسانه: شناسه <?= (int)$videoAttachmentId ?></p>
-    </div>
-  <?php endif; ?>
-</div>
+          <?php if ($videoAttachmentId > 0): ?>
+            <div class="mt-2">
+              <video controls class="video-preview" src="<?= e($wc->getBaseUrl() . '/wp-json/wp/v2/media/' . $videoAttachmentId) ?>?fields=source_url" preload="metadata"></video>
+              <p class="text-muted small mt-1 mb-0">ویدیو در کتابخانه رسانه: شناسه <?= (int)$videoAttachmentId ?></p>
+            </div>
+          <?php endif; ?>
+        </div>
       </div>
 
-      <!-- دسته‌بندی‌ها -->
-      <div class="card mb-4">
+      <div class="card product-edit-card mb-4">
         <div class="card-header fw-bold">دسته‌بندی‌ها</div>
-        <div class="card-body" style="max-height:300px; overflow-y:auto;">
+        <div class="card-body category-scroll">
           <?php foreach ($catTree as $cat): ?>
             <div class="form-check" style="margin-right: <?= $cat['_depth'] * 16 ?>px;">
               <input class="form-check-input cat-checkbox" type="checkbox" value="<?= (int)$cat['id'] ?>" id="cat_<?= (int)$cat['id'] ?>"
@@ -263,7 +353,7 @@ require __DIR__ . '/partials/header.php';
         </div>
       </div>
 
-      <div class="d-grid gap-2">
+      <div class="save-panel d-grid gap-2">
         <button type="submit" class="btn btn-primary btn-lg" id="saveProductBtn">💾 ذخیره محصول</button>
         <div id="saveResultMsg" class="small"></div>
       </div>
@@ -271,7 +361,6 @@ require __DIR__ . '/partials/header.php';
   </div>
 </form>
 
-<!-- Template های JS (مخفی) -->
 <template id="attrRowTemplate">
   <div class="attr-row" data-index="__INDEX__">
     <div class="row g-2 align-items-start">
