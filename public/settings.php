@@ -14,13 +14,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $wpAppPass  = trim($_POST['wp_app_password'] ?? '');
     $siteTitle  = trim($_POST['site_title'] ?? '');
 
+    if ($ck === '') $ck = (string)getSetting('consumer_key');
+    if ($cs === '') $cs = (string)getSetting('consumer_secret');
+    if ($wpAppPass === '') $wpAppPass = (string)getSetting('wp_app_password');
+
     setSetting('store_url', $storeUrl);
     setSetting('consumer_key', $ck);
     setSetting('consumer_secret', $cs);
     setSetting('wp_username', $wpUser);
     setSetting('wp_app_password', $wpAppPass);
     setSetting('site_title', $siteTitle ?: APP_NAME);
-    
+
     logActivity('update_settings', 'settings', 'به‌روزرسانی تنظیمات اتصال ووکامرس و وردپرس');
     setFlash('success', 'تنظیمات ذخیره شد.');
     redirect('settings.php');
@@ -50,30 +54,32 @@ require __DIR__ . '/partials/header.php';
 
       <div class="row">
         <div class="col-md-6 mb-3">
-          <label class="form-label">WooCommerce Consumer Key <span class="text-danger">*</span></label>
-          <input type="text" name="consumer_key" class="form-control" dir="ltr" value="<?= e(getSetting('consumer_key')) ?>" required>
+          <label class="form-label">WooCommerce Consumer Key</label>
+          <input type="password" name="consumer_key" class="form-control" dir="ltr" autocomplete="new-password" placeholder="برای حفظ کلید فعلی خالی بگذارید">
+          <div class="form-text">کلید ذخیره‌شده نمایش داده نمی‌شود.</div>
         </div>
 
         <div class="col-md-6 mb-3">
-          <label class="form-label">WooCommerce Consumer Secret <span class="text-danger">*</span></label>
-          <input type="text" name="consumer_secret" class="form-control" dir="ltr" value="<?= e(getSetting('consumer_secret')) ?>" required>
+          <label class="form-label">WooCommerce Consumer Secret</label>
+          <input type="password" name="consumer_secret" class="form-control" dir="ltr" autocomplete="new-password" placeholder="برای حفظ Secret فعلی خالی بگذارید">
+          <div class="form-text">Secret ذخیره‌شده نمایش داده نمی‌شود.</div>
         </div>
       </div>
 
       <div class="p-3 bg-light rounded border mb-4">
-        <div class="fw-bold mb-2 text-primary">🔐 احراز هویت پیشرفته وردپرس (جهت رفع خطای آپلود عکس)</div>
+        <div class="fw-bold mb-2 text-primary">🔐 احراز هویت وردپرس برای رسانه</div>
         <div class="row">
           <div class="col-md-6 mb-3">
-            <label class="form-label">نام کاربری وردپرس (ادمین)</label>
-            <input type="text" name="wp_username" class="form-control" dir="ltr" placeholder="مثلا: admin" value="<?= e(getSetting('wp_username')) ?>">
+            <label class="form-label">نام کاربری وردپرس</label>
+            <input type="text" name="wp_username" class="form-control" dir="ltr" autocomplete="username" placeholder="مثلا: admin" value="<?= e(getSetting('wp_username')) ?>">
           </div>
 
           <div class="col-md-6 mb-3">
-            <label class="form-label">رمز عبور اپلیکیشن (Application Password)</label>
-            <input type="text" name="wp_app_password" class="form-control" dir="ltr" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" value="<?= e(getSetting('wp_app_password')) ?>">
+            <label class="form-label">Application Password</label>
+            <input type="password" name="wp_app_password" class="form-control" dir="ltr" autocomplete="new-password" placeholder="برای حفظ رمز فعلی خالی بگذارید">
+            <div class="form-text">رمز ذخیره‌شده دوباره در HTML نمایش داده نمی‌شود.</div>
           </div>
         </div>
-        <div class="form-text text-muted">نکته: در صورت پر کردن این دو فیلد، سیستم برای آپلود تصاویر متغیرها از این لایه امنیتی استفاده خواهد کرد.</div>
       </div>
 
       <button type="submit" class="btn btn-primary">ذخیره تنظیمات</button>
@@ -84,7 +90,7 @@ require __DIR__ . '/partials/header.php';
     <hr>
     <div class="text-muted small">
       <p class="mb-1"><strong>راهنمای کلیدهای ووکامرس:</strong> در پیشخوان وردپرس به مسیر <code>WooCommerce &rarr; تنظیمات &rarr; پیشرفته &rarr; REST API</code> بروید و یک کلید جدید با دسترسی «خواندن/نوشتن» بسازید.</p>
-      <p class="mb-0"><strong>راهنمای رمز اپلیکیشن:</strong> در پیشخوان وردپرس به مسیر <code>کاربران &rarr; شناسنامه شما</code> رفته و در بخش «رمزهای عبور اپلیکیشن» یک رمز جدید تولید و بدون فاصله در کادر بالا وارد کنید.</p>
+      <p class="mb-0"><strong>راهنمای رمز اپلیکیشن:</strong> در پیشخوان وردپرس به مسیر <code>کاربران &rarr; شناسنامه شما</code> رفته و در بخش «رمزهای عبور اپلیکیشن» یک رمز جدید تولید کنید.</p>
     </div>
   </div>
 </div>
@@ -100,11 +106,13 @@ document.getElementById('testConnBtn').addEventListener('click', function () {
   fetch('ajax/settings_test.php', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
-      resultEl.innerHTML = data.success
-        ? '<span class="text-success">✅ ' + data.message + '</span>'
-        : '<span class="text-danger">❌ ' + data.message + '</span>';
+      resultEl.textContent = data.message || (data.success ? 'اتصال برقرار است.' : 'اتصال ناموفق بود.');
+      resultEl.className = data.success ? 'ms-2 text-success' : 'ms-2 text-danger';
     })
-    .catch(() => { resultEl.innerHTML = '<span class="text-danger">خطا در برقراری ارتباط</span>'; })
+    .catch(() => {
+      resultEl.textContent = 'خطا در برقراری ارتباط';
+      resultEl.className = 'ms-2 text-danger';
+    })
     .finally(() => { btn.disabled = false; });
 });
 </script>
