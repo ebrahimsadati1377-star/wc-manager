@@ -15,9 +15,9 @@ class Database
                     PDO::ATTR_EMULATE_PREPARES   => false,
                 ]);
             } catch (PDOException $e) {
+                error_log('[wc-manager] database connection failed: ' . $e->getMessage());
                 http_response_code(500);
-                die('خطا در اتصال به دیتابیس. لطفاً اطلاعات دیتابیس را در config/config.php بررسی کنید. (' .
-                    (APP_DEBUG ? $e->getMessage() : 'جزئیات در حالت دیباگ نمایش داده می‌شود') . ')');
+                die('خطا در اتصال به دیتابیس.');
             }
         }
         return self::$instance;
