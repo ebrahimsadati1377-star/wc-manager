@@ -4,8 +4,7 @@ require_once __DIR__ . '/../config/config.php';
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
-// Some deployments start the session inside config.php. Session ini values
-// can only be changed before session_start(), so guard these changes.
+// Apply native session defaults when config.php has not started the session yet.
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
@@ -14,6 +13,33 @@ if (session_status() === PHP_SESSION_NONE) {
     if ($isHttps) {
         ini_set('session.cookie_secure', '1');
     }
+}
+
+// Some deployments start the session inside the private config.php. In that
+// case PHP no longer allows changing session ini directives. Re-issue the
+// active session cookie with hardened attributes so the browser still receives
+// Secure/HttpOnly/SameSite on HTTPS responses. Login also regenerates the ID.
+if (
+    PHP_SAPI !== 'cli'
+    && session_status() === PHP_SESSION_ACTIVE
+    && session_id() !== ''
+    && ini_get('session.use_cookies')
+    && !headers_sent()
+) {
+    $params = session_get_cookie_params();
+    $expires = 0;
+    if ((int)($params['lifetime'] ?? 0) > 0) {
+        $expires = time() + (int)$params['lifetime'];
+    }
+
+    setcookie(session_name(), session_id(), [
+        'expires' => $expires,
+        'path' => $params['path'] ?: '/',
+        'domain' => $params['domain'] ?? '',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
 }
 
 if (PHP_SAPI !== 'cli' && !headers_sent()) {
@@ -32,3 +58,7 @@ require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Helpers.php';
 require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/WooCommerceClient.php';
+
+// Every endpoint inside public/ajax is protected centrally. Existing endpoint-
+// level CSRF checks remain harmless defense in depth.
+enforceAjaxRequestSecurity();
