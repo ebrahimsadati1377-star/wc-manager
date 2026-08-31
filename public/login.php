@@ -9,6 +9,9 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!checkCsrf()) {
         $error = 'نشست منقضی شده، صفحه را رفرش کنید.';
+    } elseif (Auth::isLoginRateLimited()) {
+        $minutes = max(1, (int)ceil(Auth::loginRetryAfter() / 60));
+        $error = 'تعداد تلاش‌های ورود بیش از حد مجاز است. حدود ' . $minutes . ' دقیقه دیگر دوباره تلاش کنید.';
     } else {
         $username = trim($_POST['username'] ?? '');
         $password = (string)($_POST['password'] ?? '');
@@ -17,7 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (Auth::attempt($username, $password)) {
             redirect('index.php');
         } else {
-            $error = 'نام کاربری یا رمز عبور اشتباه است.';
+            $error = Auth::isLoginRateLimited()
+                ? 'تعداد تلاش‌های ورود بیش از حد مجاز است. لطفاً بعداً دوباره تلاش کنید.'
+                : 'نام کاربری یا رمز عبور اشتباه است.';
         }
     }
 }
@@ -40,17 +45,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php if ($error): ?>
         <div class="alert alert-danger"><?= e($error) ?></div>
       <?php endif; ?>
-      <form method="post">
+      <form method="post" autocomplete="on">
         <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <div class="mb-3">
           <label class="form-label">نام کاربری</label>
-          <input type="text" name="username" class="form-control" required autofocus>
+          <input type="text" name="username" class="form-control" autocomplete="username" required autofocus>
         </div>
         <div class="mb-3">
           <label class="form-label">رمز عبور</label>
-          <input type="password" name="password" class="form-control" required>
+          <input type="password" name="password" class="form-control" autocomplete="current-password" required>
         </div>
-        <button type="submit" class="btn btn-primary w-100">ورود</button>
+        <button type="submit" class="btn btn-primary w-100" <?= Auth::isLoginRateLimited() ? 'disabled' : '' ?>>ورود</button>
       </form>
     </div>
   </div>
