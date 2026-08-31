@@ -1,20 +1,27 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
 Auth::requireLogin();
+requireCsrfOrFail();
 
-header('Content-Type: application/json');
-
-if ($_SERVER['REQUEST_METHOD'] === 'DELETE' && isset($_GET['id'])) {
-    $client = new WooCommerceClient();
-    $result = $client->deletePost((int)$_GET['id']);
-    
-    if ($result['status'] === 200 || $result['status'] === 204) {
-        logActivity('delete_post', 'magazine', 'Post ID: ' . (int)$_GET['id']);
-        echo json_encode(['success' => true]);
-    } else {
-        echo json_encode(['success' => false, 'message' => $result['error'] ?? 'خطای نامشخص در حذف مقاله']);
-    }
-} else {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'درخواست نامعتبر']);
+if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+    jsonResponse(['success' => false, 'message' => 'متد درخواست نامعتبر است.'], 405);
 }
+
+$id = (int)($_GET['id'] ?? 0);
+if ($id <= 0) {
+    jsonResponse(['success' => false, 'message' => 'شناسه مقاله نامعتبر است.'], 400);
+}
+
+$client = new WooCommerceClient();
+$result = $client->deletePost($id);
+
+if (!empty($result['error']) || ($result['status'] < 200 || $result['status'] >= 300)) {
+    $status = ($result['status'] >= 400 && $result['status'] < 600) ? (int)$result['status'] : 502;
+    jsonResponse([
+        'success' => false,
+        'message' => $result['error'] ?: 'حذف مقاله در وردپرس ناموفق بود.'
+    ], $status);
+}
+
+logActivity('delete_post', 'magazine', 'Post ID: ' . $id);
+jsonResponse(['success' => true]);
