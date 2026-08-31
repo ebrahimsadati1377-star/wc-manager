@@ -1,16 +1,19 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 
-// Apply security defaults before any session-backed authentication work.
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
-ini_set('session.use_strict_mode', '1');
-ini_set('session.use_only_cookies', '1');
-ini_set('session.cookie_httponly', '1');
-ini_set('session.cookie_samesite', 'Lax');
-if ($isHttps) {
-    ini_set('session.cookie_secure', '1');
+// Some deployments start the session inside config.php. Session ini values
+// can only be changed before session_start(), so guard these changes.
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_samesite', 'Lax');
+    if ($isHttps) {
+        ini_set('session.cookie_secure', '1');
+    }
 }
 
 if (PHP_SAPI !== 'cli' && !headers_sent()) {
