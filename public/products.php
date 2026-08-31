@@ -42,26 +42,117 @@ if (!$wc->isConfigured()) {
     }
 }
 
+function productListUrl(int $targetPage): string
+{
+    $qs = $_GET;
+    $qs['page'] = max(1, $targetPage);
+    return '?' . http_build_query($qs);
+}
+
+function productStatusMeta(array $product): array
+{
+    $statusMap = [
+        'publish' => ['منتشرشده', 'success'],
+        'draft' => ['پیش‌نویس', 'secondary'],
+        'pending' => ['در انتظار', 'warning'],
+    ];
+    return $statusMap[$product['status'] ?? ''] ?? [($product['status'] ?? '-'), 'light'];
+}
+
 require __DIR__ . '/partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<style>
+.products-heading .btn { min-height: 44px; }
+.product-mobile-list { display: none; }
+.product-mobile-card {
+    border: 1px solid #e9ecef;
+    border-radius: 1rem;
+    background: #fff;
+    padding: 1rem;
+    box-shadow: 0 .125rem .35rem rgba(0, 0, 0, .04);
+}
+.product-mobile-top { display: flex; gap: .85rem; align-items: flex-start; }
+.product-mobile-image,
+.product-mobile-placeholder {
+    width: 82px;
+    height: 82px;
+    border-radius: .8rem;
+    object-fit: cover;
+    flex: 0 0 82px;
+}
+.product-mobile-title {
+    font-weight: 700;
+    color: #212529;
+    text-decoration: none;
+    line-height: 1.7;
+    display: block;
+}
+.product-mobile-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .65rem;
+    margin-top: 1rem;
+}
+.product-mobile-meta-item {
+    background: #f8f9fa;
+    border-radius: .75rem;
+    padding: .7rem .8rem;
+    min-width: 0;
+}
+.product-mobile-meta-label { color: #6c757d; font-size: .75rem; margin-bottom: .2rem; }
+.product-mobile-meta-value { font-weight: 600; font-size: .9rem; overflow-wrap: anywhere; }
+.product-mobile-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: .5rem;
+    margin-top: 1rem;
+}
+.product-mobile-actions .btn {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+}
+.products-filter-card { border: 0; box-shadow: 0 .125rem .35rem rgba(0,0,0,.04); }
+.mobile-pagination { display: none; }
+
+@media (max-width: 767.98px) {
+    .products-heading { align-items: stretch !important; flex-direction: column; }
+    .products-heading .btn { width: 100%; }
+    .products-filter-card .card-body { padding: 1rem; }
+    .products-desktop-table { display: none; }
+    .product-mobile-list { display: grid; gap: .85rem; }
+    .desktop-pagination { display: none; }
+    .mobile-pagination { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .mobile-pagination .btn { min-height: 44px; flex: 0 0 auto; }
+    .mobile-page-current { color: #6c757d; font-size: .9rem; text-align: center; flex: 1 1 auto; }
+}
+
+@media (max-width: 380px) {
+    .product-mobile-meta { grid-template-columns: 1fr; }
+    .product-mobile-actions { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="products-heading d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
   <h3 class="mb-0">محصولات <?php if ($total): ?><span class="text-muted fs-6">(<?= e($total) ?> محصول)</span><?php endif; ?></h3>
-  <a href="product_edit.php" class="btn btn-primary">➕ افزودن محصول جدید</a>
+  <a href="product_edit.php" class="btn btn-primary"><i class="fas fa-plus ms-1"></i> افزودن محصول جدید</a>
 </div>
 
 <?php if ($loadError): ?>
   <div class="alert alert-danger"><?= e($loadError) ?></div>
 <?php else: ?>
 
-<div class="card mb-3">
+<div class="card products-filter-card mb-3">
   <div class="card-body">
     <form method="get" class="row g-2 align-items-end">
-      <div class="col-md-4">
+      <div class="col-12 col-md-4">
         <label class="form-label small mb-1">جستجو</label>
-        <input type="text" name="s" class="form-control" placeholder="نام یا SKU محصول..." value="<?= e($search) ?>">
+        <input type="search" name="s" class="form-control" placeholder="نام یا SKU محصول..." value="<?= e($search) ?>">
       </div>
-      <div class="col-md-3">
+      <div class="col-12 col-sm-6 col-md-3">
         <label class="form-label small mb-1">دسته‌بندی</label>
         <select name="category" class="form-select">
           <option value="0">همه دسته‌ها</option>
@@ -70,7 +161,7 @@ require __DIR__ . '/partials/header.php';
           <?php endforeach; ?>
         </select>
       </div>
-      <div class="col-md-2">
+      <div class="col-6 col-sm-3 col-md-2">
         <label class="form-label small mb-1">وضعیت</label>
         <select name="status" class="form-select">
           <option value="">همه</option>
@@ -79,7 +170,7 @@ require __DIR__ . '/partials/header.php';
           <option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>در انتظار بررسی</option>
         </select>
       </div>
-      <div class="col-md-2">
+      <div class="col-6 col-sm-3 col-md-2">
         <label class="form-label small mb-1">نوع</label>
         <select name="type" class="form-select">
           <option value="">همه</option>
@@ -87,14 +178,20 @@ require __DIR__ . '/partials/header.php';
           <option value="variable" <?= $type === 'variable' ? 'selected' : '' ?>>متغیر</option>
         </select>
       </div>
-      <div class="col-md-1">
-        <button class="btn btn-outline-primary w-100">فیلتر</button>
+      <div class="col-12 col-md-1 d-grid">
+        <button class="btn btn-outline-primary">فیلتر</button>
       </div>
     </form>
   </div>
 </div>
 
-<div class="card">
+<?php if (empty($products)): ?>
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">محصولی یافت نشد.</div>
+  </div>
+<?php else: ?>
+
+<div class="card products-desktop-table">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
@@ -111,17 +208,16 @@ require __DIR__ . '/partials/header.php';
       </thead>
       <tbody>
         <?php foreach ($products as $p): ?>
+        <?php [$sLabel, $sColor] = productStatusMeta($p); ?>
         <tr>
           <td>
             <?php if (!empty($p['images'][0]['src'])): ?>
-              <img src="<?= e($p['images'][0]['src']) ?>" class="thumb-sm">
+              <img src="<?= e($p['images'][0]['src']) ?>" class="thumb-sm" alt="<?= e($p['name']) ?>">
             <?php else: ?>
               <div class="thumb-sm bg-light d-flex align-items-center justify-content-center text-muted">—</div>
             <?php endif; ?>
           </td>
-          <td>
-            <a href="product_edit.php?id=<?= (int)$p['id'] ?>" class="text-decoration-none fw-semibold"><?= e($p['name']) ?></a>
-          </td>
+          <td><a href="product_edit.php?id=<?= (int)$p['id'] ?>" class="text-decoration-none fw-semibold"><?= e($p['name']) ?></a></td>
           <td>
             <?php if ($p['type'] === 'variable'): ?>
               <span class="badge badge-type-variable">متغیر</span>
@@ -133,13 +229,11 @@ require __DIR__ . '/partials/header.php';
           <td>
             <?php if ($p['type'] === 'variable'): ?>
               <span class="small text-muted"><?= e($p['price'] !== '' ? formatPrice($p['price']) : 'بسته به تنوع') ?></span>
+            <?php elseif ($p['on_sale']): ?>
+              <span class="text-decoration-line-through text-muted small"><?= formatPrice($p['regular_price']) ?></span>
+              <span class="text-danger fw-semibold"><?= formatPrice($p['sale_price']) ?></span>
             <?php else: ?>
-              <?php if ($p['on_sale']): ?>
-                <span class="text-decoration-line-through text-muted small"><?= formatPrice($p['regular_price']) ?></span>
-                <span class="text-danger fw-semibold"><?= formatPrice($p['sale_price']) ?></span>
-              <?php else: ?>
-                <?= formatPrice($p['regular_price']) ?>
-              <?php endif; ?>
+              <?= formatPrice($p['regular_price']) ?>
             <?php endif; ?>
           </td>
           <td>
@@ -149,46 +243,115 @@ require __DIR__ . '/partials/header.php';
               <span class="small text-muted"><?= $p['stock_status'] === 'instock' ? 'موجود' : 'ناموجود' ?></span>
             <?php endif; ?>
           </td>
-          <td>
-            <?php
-              $statusMap = ['publish' => ['منتشرشده', 'success'], 'draft' => ['پیش‌نویس', 'secondary'], 'pending' => ['در انتظار', 'warning']];
-              [$sLabel, $sColor] = $statusMap[$p['status']] ?? [$p['status'], 'light'];
-            ?>
-            <span class="badge text-bg-<?= $sColor ?>"><?= e($sLabel) ?></span>
-          </td>
-          <td class="text-end">
+          <td><span class="badge text-bg-<?= $sColor ?>"><?= e($sLabel) ?></span></td>
+          <td class="text-end text-nowrap">
             <a href="product_edit.php?id=<?= (int)$p['id'] ?>" class="btn btn-sm btn-outline-primary">ویرایش</a>
             <?php if (!empty($p['permalink'])): ?>
-              <a href="<?= e($p['permalink']) ?>" target="_blank" class="btn btn-sm btn-outline-secondary">مشاهده</a>
+              <a href="<?= e($p['permalink']) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary">مشاهده</a>
             <?php endif; ?>
             <button class="btn btn-sm btn-outline-danger" onclick="deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')">حذف</button>
           </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($products)): ?>
-          <tr><td colspan="8" class="text-center text-muted py-5">محصولی یافت نشد.</td></tr>
-        <?php endif; ?>
       </tbody>
     </table>
   </div>
 </div>
 
-<?php if ($totalPages > 1): ?>
-<nav class="mt-3">
-  <ul class="pagination justify-content-center">
+<div class="product-mobile-list">
+  <?php foreach ($products as $p): ?>
     <?php
-    $qs = $_GET;
-    for ($i = 1; $i <= $totalPages; $i++):
-        $qs['page'] = $i;
+      [$sLabel, $sColor] = productStatusMeta($p);
+      $priceLabel = '';
+      if ($p['type'] === 'variable') {
+          $priceLabel = $p['price'] !== '' ? formatPrice($p['price']) : 'بسته به تنوع';
+      } elseif ($p['on_sale']) {
+          $priceLabel = formatPrice($p['sale_price']);
+      } else {
+          $priceLabel = formatPrice($p['regular_price']);
+      }
+      $stockLabel = $p['manage_stock']
+          ? (string)($p['stock_quantity'] ?? '-')
+          : ($p['stock_status'] === 'instock' ? 'موجود' : 'ناموجود');
+      $typeLabel = $p['type'] === 'variable' ? 'متغیر' : 'ساده';
     ?>
+    <article class="product-mobile-card">
+      <div class="product-mobile-top">
+        <?php if (!empty($p['images'][0]['src'])): ?>
+          <img src="<?= e($p['images'][0]['src']) ?>" class="product-mobile-image" alt="<?= e($p['name']) ?>">
+        <?php else: ?>
+          <div class="product-mobile-placeholder bg-light d-flex align-items-center justify-content-center text-muted">—</div>
+        <?php endif; ?>
+        <div class="flex-grow-1 min-w-0">
+          <a href="product_edit.php?id=<?= (int)$p['id'] ?>" class="product-mobile-title"><?= e($p['name']) ?></a>
+          <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+            <span class="badge <?= $p['type'] === 'variable' ? 'badge-type-variable' : 'badge-type-simple' ?>"><?= e($typeLabel) ?></span>
+            <span class="badge text-bg-<?= $sColor ?>"><?= e($sLabel) ?></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="product-mobile-meta">
+        <div class="product-mobile-meta-item">
+          <div class="product-mobile-meta-label">قیمت</div>
+          <div class="product-mobile-meta-value"><?= e($priceLabel) ?></div>
+        </div>
+        <div class="product-mobile-meta-item">
+          <div class="product-mobile-meta-label">موجودی</div>
+          <div class="product-mobile-meta-value"><?= e($stockLabel) ?></div>
+        </div>
+        <div class="product-mobile-meta-item">
+          <div class="product-mobile-meta-label">SKU</div>
+          <div class="product-mobile-meta-value" dir="ltr"><?= e($p['sku'] ?: '-') ?></div>
+        </div>
+        <div class="product-mobile-meta-item">
+          <div class="product-mobile-meta-label">شناسه</div>
+          <div class="product-mobile-meta-value">#<?= (int)$p['id'] ?></div>
+        </div>
+      </div>
+
+      <div class="product-mobile-actions">
+        <a href="product_edit.php?id=<?= (int)$p['id'] ?>" class="btn btn-outline-primary"><i class="fas fa-edit"></i> ویرایش</a>
+        <?php if (!empty($p['permalink'])): ?>
+          <a href="<?= e($p['permalink']) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary"><i class="fas fa-eye"></i> مشاهده</a>
+        <?php else: ?>
+          <button class="btn btn-outline-secondary" disabled><i class="fas fa-eye"></i> مشاهده</button>
+        <?php endif; ?>
+        <button class="btn btn-outline-danger" onclick="deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')"><i class="fas fa-trash"></i> حذف</button>
+      </div>
+    </article>
+  <?php endforeach; ?>
+</div>
+
+<?php if ($totalPages > 1): ?>
+<nav class="mt-3 desktop-pagination" aria-label="صفحه‌بندی محصولات">
+  <ul class="pagination justify-content-center flex-wrap">
+    <?php
+      $start = max(1, $page - 2);
+      $end = min($totalPages, $page + 2);
+    ?>
+    <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+      <a class="page-link" href="<?= e(productListUrl(max(1, $page - 1))) ?>">قبلی</a>
+    </li>
+    <?php for ($i = $start; $i <= $end; $i++): ?>
       <li class="page-item <?= $i === $page ? 'active' : '' ?>">
-        <a class="page-link" href="?<?= http_build_query($qs) ?>"><?= $i ?></a>
+        <a class="page-link" href="<?= e(productListUrl($i)) ?>"><?= $i ?></a>
       </li>
     <?php endfor; ?>
+    <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+      <a class="page-link" href="<?= e(productListUrl(min($totalPages, $page + 1))) ?>">بعدی</a>
+    </li>
   </ul>
+</nav>
+
+<nav class="mt-3 mobile-pagination" aria-label="صفحه‌بندی موبایل محصولات">
+  <a class="btn btn-outline-secondary <?= $page <= 1 ? 'disabled' : '' ?>" href="<?= e(productListUrl(max(1, $page - 1))) ?>">قبلی</a>
+  <div class="mobile-page-current">صفحه <?= $page ?> از <?= $totalPages ?></div>
+  <a class="btn btn-outline-secondary <?= $page >= $totalPages ? 'disabled' : '' ?>" href="<?= e(productListUrl(min($totalPages, $page + 1))) ?>">بعدی</a>
 </nav>
 <?php endif; ?>
 
+<?php endif; ?>
 <?php endif; ?>
 
 <script>
