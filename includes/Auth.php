@@ -8,7 +8,8 @@ class Auth
 
     public static function attempt(string $username, string $password): bool
     {
-        if (self::isLoginRateLimited()) {
+        $username = trim($username);
+        if (self::isLoginRateLimited($username)) {
             return false;
         }
 
@@ -18,6 +19,7 @@ class Auth
 
         if ($user && password_verify($password, $user['password_hash'])) {
             self::clearLoginFailures();
+            self::recordPersistentThrottleReset($username);
             session_regenerate_id(true);
             $_SESSION['user'] = [
                 'id'        => $user['id'],
@@ -29,20 +31,26 @@ class Auth
             return true;
         }
 
-        self::recordLoginFailure();
+        self::recordLoginFailure($username);
         return false;
     }
 
-    public static function isLoginRateLimited(): bool
+    public static function isLoginRateLimited(string $username = ''): bool
     {
         $state = self::loginAttemptState();
-        return ($state['locked_until'] ?? 0) > time();
+        if (($state['locked_until'] ?? 0) > time()) {
+            return true;
+        }
+
+        return $username !== '' && self::persistentLoginRetryAfter($username) > 0;
     }
 
-    public static function loginRetryAfter(): int
+    public static function loginRetryAfter(string $username = ''): int
     {
         $state = self::loginAttemptState();
-        return max(0, (int)($state['locked_until'] ?? 0) - time());
+        $sessionRetry = max(0, (int)($state['locked_until'] ?? 0) - time());
+        $persistentRetry = $username !== '' ? self::persistentLoginRetryAfter($username) : 0;
+        return max($sessionRetry, $persistentRetry);
     }
 
     private static function loginAttemptState(): array
@@ -58,7 +66,7 @@ class Auth
         return $state;
     }
 
-    private static function recordLoginFailure(): void
+    private static function recordLoginFailure(string $username): void
     {
         $now = time();
         $state = self::loginAttemptState();
@@ -67,12 +75,82 @@ class Auth
             $state['locked_until'] = $now + self::LOGIN_LOCK_SECONDS;
         }
         $_SESSION['login_attempts'] = $state;
-        logActivity('login_failed', 'auth', 'تلاش ورود ناموفق');
+
+        // Store only a one-way key derived from client IP + username. This makes
+        // throttling survive cookie/session resets without persisting the raw IP.
+        logActivity('login_failed', self::loginThrottleKey($username), '');
     }
 
     private static function clearLoginFailures(): void
     {
         unset($_SESSION['login_attempts']);
+    }
+
+    private static function loginThrottleKey(string $username): string
+    {
+        $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $normalizedUsername = function_exists('mb_strtolower')
+            ? mb_strtolower(trim($username), 'UTF-8')
+            : strtolower(trim($username));
+
+        return hash('sha256', $clientIp . "\0" . $normalizedUsername);
+    }
+
+    private static function persistentLoginRetryAfter(string $username): int
+    {
+        $key = self::loginThrottleKey($username);
+
+        try {
+            $db = Database::get();
+            $cutoffTs = time() - self::LOGIN_WINDOW_SECONDS;
+
+            $resetStmt = $db->prepare(
+                "SELECT created_at FROM activity_log
+                 WHERE action = 'login_rate_reset' AND target = :target
+                 ORDER BY id DESC LIMIT 1"
+            );
+            $resetStmt->execute(['target' => $key]);
+            $resetAt = $resetStmt->fetchColumn();
+            if ($resetAt) {
+                $resetTs = strtotime((string)$resetAt);
+                if ($resetTs !== false) {
+                    $cutoffTs = max($cutoffTs, $resetTs);
+                }
+            }
+
+            $failureStmt = $db->prepare(
+                "SELECT COUNT(*) AS failure_count, MAX(created_at) AS last_failure
+                 FROM activity_log
+                 WHERE action = 'login_failed'
+                   AND target = :target
+                   AND created_at >= :cutoff"
+            );
+            $failureStmt->execute([
+                'target' => $key,
+                'cutoff' => date('Y-m-d H:i:s', $cutoffTs),
+            ]);
+            $row = $failureStmt->fetch();
+
+            if (!$row || (int)($row['failure_count'] ?? 0) < self::LOGIN_MAX_ATTEMPTS) {
+                return 0;
+            }
+
+            $lastFailureTs = strtotime((string)($row['last_failure'] ?? ''));
+            if ($lastFailureTs === false) {
+                return self::LOGIN_LOCK_SECONDS;
+            }
+
+            return max(0, ($lastFailureTs + self::LOGIN_LOCK_SECONDS) - time());
+        } catch (Throwable $e) {
+            // Session throttling remains active if the audit table is temporarily unavailable.
+            error_log('[wc-manager] persistent login throttle failed: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    private static function recordPersistentThrottleReset(string $username): void
+    {
+        logActivity('login_rate_reset', self::loginThrottleKey($username), '');
     }
 
     public static function logout(): void
@@ -84,8 +162,9 @@ class Auth
             setcookie(session_name(), '', [
                 'expires' => time() - 42000,
                 'path' => $params['path'] ?: '/',
-                'domain' => $params['domain'],
-                'secure' => (bool)$params['secure'],
+                'domain' => $params['domain'] ?? '',
+                'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                    || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'),
                 'httponly' => true,
                 'samesite' => 'Lax',
             ]);
