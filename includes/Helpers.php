@@ -52,8 +52,6 @@ function getFlashes(): array
     return $flashes;
 }
 
-// ---------------- Settings (key/value in DB) ----------------
-
 function getSetting(string $key, $default = null)
 {
     static $cache = null;
@@ -76,8 +74,6 @@ function setSetting(string $key, string $value): void
     $stmt->execute(['k' => $key, 'v' => $value, 'v2' => $value]);
 }
 
-// ---------------- Activity log ----------------
-
 function logActivity(string $action, string $target = '', string $details = ''): void
 {
     try {
@@ -85,17 +81,21 @@ function logActivity(string $action, string $target = '', string $details = ''):
             'INSERT INTO activity_log (user_id, action, target, details) VALUES (:uid, :action, :target, :details)'
         );
         $stmt->execute([
-            'uid'     => $_SESSION['user']['id'] ?? null,
-            'action'  => $action,
-            'target'  => $target,
+            'uid' => $_SESSION['user']['id'] ?? null,
+            'action' => $action,
+            'target' => $target,
             'details' => $details,
         ]);
     } catch (Throwable $e) {
-        // silent fail - logging should never break the app
+        // Logging must never break the request, but failures must not disappear silently.
+        error_log(sprintf(
+            '[wc-manager] activity_log failed action=%s target=%s error=%s',
+            $action,
+            $target,
+            $e->getMessage()
+        ));
     }
 }
-
-// ---------------- Misc ----------------
 
 function formatPrice($price): string
 {
@@ -108,7 +108,8 @@ function formatPrice($price): string
 function currentUrl(): string
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    return $scheme . '://' . $_SERVER['HTTP_HOST'];
+    $host = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    return $scheme . '://' . $host;
 }
 
 function uploadUrlBase(): string
@@ -117,14 +118,13 @@ function uploadUrlBase(): string
         return rtrim(UPLOAD_URL_BASE, '/');
     }
 
-    $publicRoot = realpath(APP_BASE_PATH); // مسیر فیزیکی پوشه public
-    $docRoot    = isset($_SERVER['DOCUMENT_ROOT']) ? realpath($_SERVER['DOCUMENT_ROOT']) : false;
+    $publicRoot = realpath(APP_BASE_PATH);
+    $docRoot = isset($_SERVER['DOCUMENT_ROOT']) ? realpath($_SERVER['DOCUMENT_ROOT']) : false;
 
     if ($publicRoot && $docRoot && strpos($publicRoot, $docRoot) === 0) {
         $relative = str_replace('\\', '/', substr($publicRoot, strlen($docRoot)));
         return rtrim(currentUrl() . $relative, '/');
     }
 
-    // fallback: فرض بر این‌که پوشه public همان ریشه دامنه است
     return rtrim(currentUrl(), '/');
 }
