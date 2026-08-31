@@ -100,8 +100,6 @@ class WooCommerceClient
             $options[CURLOPT_HTTPAUTH] = CURLAUTH_BASIC;
             $options[CURLOPT_USERPWD] = $this->wpUsername . ':' . $this->wpAppPassword;
         } else {
-            // WooCommerce REST over HTTPS supports HTTP Basic auth using ck/cs.
-            // Credentials no longer appear in the URL/query string.
             $options[CURLOPT_HTTPAUTH] = CURLAUTH_BASIC;
             $options[CURLOPT_USERPWD] = $this->consumerKey . ':' . $this->consumerSecret;
         }
@@ -193,8 +191,6 @@ class WooCommerceClient
         return ['status' => $status, 'body' => [], 'headers' => [], 'error' => $message];
     }
 
-    // ---------------- WordPress posts ----------------
-
     public function createPost(string $title, string $content, string $status = 'draft'): array
     {
         return $this->createPostWithCategories($title, $content, $status);
@@ -207,15 +203,8 @@ class WooCommerceClient
         return $this->request('POST', 'wp-json/wp/v2/posts', [], $body);
     }
 
-    public function getPost(int $id): array
-    {
-        return $this->request('GET', 'wp-json/wp/v2/posts/' . $id);
-    }
-
-    public function updatePost(int $id, string $title, string $content, string $status): array
-    {
-        return $this->updatePostWithCategories($id, $title, $content, $status);
-    }
+    public function getPost(int $id): array { return $this->request('GET', 'wp-json/wp/v2/posts/' . $id); }
+    public function updatePost(int $id, string $title, string $content, string $status): array { return $this->updatePostWithCategories($id, $title, $content, $status); }
 
     public function updatePostWithCategories(int $id, string $title, string $content, string $status, array $categoryIds = []): array
     {
@@ -224,20 +213,9 @@ class WooCommerceClient
         return $this->request('POST', 'wp-json/wp/v2/posts/' . $id, [], $body);
     }
 
-    public function deletePost(int $postId): array
-    {
-        return $this->request('DELETE', 'wp-json/wp/v2/posts/' . $postId, ['force' => 'true']);
-    }
-
-    public function setPostFeaturedImage(int $postId, int $mediaId): array
-    {
-        return $this->request('POST', 'wp-json/wp/v2/posts/' . $postId, [], ['featured_media' => $mediaId]);
-    }
-
-    public function getPostCategories(array $params = []): array
-    {
-        return $this->request('GET', 'wp-json/wp/v2/categories', array_merge(['per_page' => 100], $params));
-    }
+    public function deletePost(int $postId): array { return $this->request('DELETE', 'wp-json/wp/v2/posts/' . $postId, ['force' => 'true']); }
+    public function setPostFeaturedImage(int $postId, int $mediaId): array { return $this->request('POST', 'wp-json/wp/v2/posts/' . $postId, [], ['featured_media' => $mediaId]); }
+    public function getPostCategories(array $params = []): array { return $this->request('GET', 'wp-json/wp/v2/categories', array_merge(['per_page' => 100], $params)); }
 
     public function createPostCategory(string $name, string $slug = ''): array
     {
@@ -256,46 +234,35 @@ class WooCommerceClient
         }
 
         $fileName = $fileName !== '' ? basename($fileName) : basename($filePath);
-        $fileData = file_get_contents($filePath);
-        if ($fileData === false) {
-            return $this->failure('خواندن فایل برای آپلود ناموفق بود.');
-        }
-
         $mime = function_exists('mime_content_type') ? mime_content_type($filePath) : false;
         $mime = is_string($mime) && $mime !== '' ? $mime : 'application/octet-stream';
 
+        $upload = new CURLFile($filePath, $mime, $fileName);
         $options = [
             CURLOPT_URL => $this->baseUrl . '/wp-json/wp/v2/media',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => true,
             CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $fileData,
+            CURLOPT_POSTFIELDS => ['file' => $upload],
             CURLOPT_TIMEOUT => 90,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_POSTREDIR => CURL_REDIR_POST_ALL,
             CURLOPT_MAXREDIRS => 3,
             CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
             CURLOPT_USERPWD => $this->wpUsername . ':' . $this->wpAppPassword,
-            CURLOPT_HTTPHEADER => [
-                'Accept: application/json',
-                'Content-Disposition: attachment; filename="' . addcslashes($fileName, "\\\"") . '"',
-                'Content-Type: ' . $mime,
-            ],
+            CURLOPT_HTTPHEADER => ['Accept: application/json'],
         ];
 
         return $this->execute($options);
     }
-
-    // ---------------- Products ----------------
 
     public function getProducts(array $params = []): array { return $this->get('products', $params); }
     public function getProduct(int $id): array { return $this->get('products/' . $id); }
     public function createProduct(array $data): array { return $this->post('products', $data); }
     public function updateProduct(int $id, array $data): array { return $this->put('products/' . $id, $data); }
     public function deleteProduct(int $id, bool $force = true): array { return $this->delete('products/' . $id, ['force' => $force ? 'true' : 'false']); }
-
-    // ---------------- Variations ----------------
 
     public function getVariations(int $productId, array $params = []): array { return $this->get('products/' . $productId . '/variations', array_merge(['per_page' => 100], $params)); }
     public function getVariation(int $productId, int $variationId): array { return $this->get('products/' . $productId . '/variations/' . $variationId); }
@@ -312,20 +279,15 @@ class WooCommerceClient
         ]));
     }
 
-    // ---------------- Categories / attributes / tags ----------------
-
     public function getCategories(array $params = []): array { return $this->get('products/categories', array_merge(['per_page' => 100], $params)); }
     public function createCategory(array $data): array { return $this->post('products/categories', $data); }
     public function updateCategory(int $id, array $data): array { return $this->put('products/categories/' . $id, $data); }
     public function deleteCategory(int $id): array { return $this->delete('products/categories/' . $id, ['force' => 'true']); }
-
     public function getAttributes(): array { return $this->get('products/attributes'); }
     public function createAttribute(array $data): array { return $this->post('products/attributes', $data); }
     public function getAttributeTerms(int $attributeId, array $params = []): array { return $this->get('products/attributes/' . $attributeId . '/terms', array_merge(['per_page' => 100], $params)); }
     public function createAttributeTerm(int $attributeId, array $data): array { return $this->post('products/attributes/' . $attributeId . '/terms', $data); }
-
     public function getTags(array $params = []): array { return $this->get('products/tags', array_merge(['per_page' => 100], $params)); }
     public function createTag(array $data): array { return $this->post('products/tags', $data); }
-
     public function ping(): array { return $this->get('products', ['per_page' => 1]); }
 }
