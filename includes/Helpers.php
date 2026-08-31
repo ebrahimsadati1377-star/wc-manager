@@ -40,6 +40,37 @@ function requireCsrfOrFail(): void
     }
 }
 
+function requirePostOrFail(): void
+{
+    if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') {
+        header('Allow: POST');
+        jsonResponse(['success' => false, 'message' => 'متد درخواست نامعتبر است.'], 405);
+    }
+}
+
+function requirePostAndCsrfOrFail(): void
+{
+    requirePostOrFail();
+    requireCsrfOrFail();
+}
+
+/**
+ * All scripts under public/ajax are state-changing or connection-test endpoints.
+ * Protect them centrally so newly added AJAX handlers cannot accidentally omit
+ * POST/CSRF checks.
+ */
+function enforceAjaxRequestSecurity(): void
+{
+    if (PHP_SAPI === 'cli') {
+        return;
+    }
+
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_FILENAME'] ?? ''));
+    if (strpos($script, '/public/ajax/') !== false) {
+        requirePostAndCsrfOrFail();
+    }
+}
+
 function setFlash(string $type, string $message): void
 {
     $_SESSION['flash'][] = ['type' => $type, 'message' => $message];
