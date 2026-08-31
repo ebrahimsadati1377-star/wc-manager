@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
 Auth::requireLogin();
+requirePostAndCsrfOrFail();
 
 // جلوگیری از اتمام زمان اجرای اسکریپت (۱۸۰ ثانیه زمان برای پردازش تصاویر و تنوع‌ها)
 set_time_limit(180);
@@ -8,19 +9,13 @@ set_time_limit(180);
 $rawInput = file_get_contents('php://input');
 $data = json_decode($rawInput, true);
 if (!is_array($data)) {
-    jsonResponse(['success' => false, 'message' => 'داده ارسالی نامعتبر است.']);
-}
-
-// CSRF check (token sent via header for JSON requests)
-$sentToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
-if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $sentToken)) {
-    jsonResponse(['success' => false, 'message' => 'نشست شما نامعتبر است، صفحه را رفرش کنید.'], 419);
+    jsonResponse(['success' => false, 'message' => 'داده ارسالی نامعتبر است.'], 422);
 }
 
 $id = (int)($data['id'] ?? 0);
-$name = trim($data['name'] ?? '');
+$name = trim((string)($data['name'] ?? ''));
 if ($name === '') {
-    jsonResponse(['success' => false, 'message' => 'نام محصول الزامی است.']);
+    jsonResponse(['success' => false, 'message' => 'نام محصول الزامی است.'], 422);
 }
 
 $type = ($data['type'] ?? 'simple') === 'variable' ? 'variable' : 'simple';
@@ -42,12 +37,18 @@ foreach ((array)($data['attributes'] ?? []) as $attr) {
         $existingTerms = [];
         if (!$termsRes['error']) {
             foreach ($termsRes['body'] as $t) {
-                $existingTerms[] = mb_strtolower($t['name']);
+                $termName = (string)($t['name'] ?? '');
+                $existingTerms[] = function_exists('mb_strtolower')
+                    ? mb_strtolower($termName, 'UTF-8')
+                    : strtolower($termName);
             }
         }
         foreach ($options as $opt) {
-            if (!in_array(mb_strtolower($opt), $existingTerms, true)) {
-                $wc->createAttributeTerm($attrId, ['name' => $opt]); // اگر از قبل موجود بود، خطای بی‌ضرر برمی‌گردد
+            $normalizedOpt = function_exists('mb_strtolower')
+                ? mb_strtolower($opt, 'UTF-8')
+                : strtolower($opt);
+            if (!in_array($normalizedOpt, $existingTerms, true)) {
+                $wc->createAttributeTerm($attrId, ['name' => $opt]);
             }
         }
         $attributes[] = [
@@ -57,7 +58,7 @@ foreach ((array)($data['attributes'] ?? []) as $attr) {
             'visible'   => true,
         ];
     } else {
-        $attrName = trim($attr['name'] ?? '');
+        $attrName = trim((string)($attr['name'] ?? ''));
         if ($attrName === '') {
             continue;
         }
@@ -75,17 +76,16 @@ foreach ((array)($data['attributes'] ?? []) as $attr) {
 $images = [];
 if (!empty($data['images']) && is_array($data['images'])) {
     foreach ($data['images'] as $img) {
-        // اگر عکس از قبل شناسه ووکامرس دارد، فقط آی‌دی آن را می‌فرستیم تا مجدد دانلود نشود
+        if (!is_array($img)) {
+            continue;
+        }
         if (!empty($img['id']) && (int)$img['id'] > 0) {
-            $images[] = [
-                'id' => (int)$img['id']
-            ];
-        } 
-        // اگر عکس جدید است و شناسه ندارد، آدرس آن فرستاده می‌شود تا دانلود شود
-        elseif (!empty($img['src'])) {
-            $images[] = [
-                'src' => $img['src']
-            ];
+            $images[] = ['id' => (int)$img['id']];
+        } elseif (!empty($img['src']) && is_string($img['src'])) {
+            $src = trim($img['src']);
+            if (filter_var($src, FILTER_VALIDATE_URL) && in_array(strtolower((string)parse_url($src, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+                $images[] = ['src' => $src];
+            }
         }
     }
 }
@@ -95,17 +95,40 @@ $payload = [
     'name'              => $name,
     'type'              => $type,
     'status'            => in_array($data['status'] ?? '', ['publish', 'draft', 'pending', 'private'], true) ? $data['status'] : 'draft',
-    'sku'               => trim($data['sku'] ?? ''),
+    'sku'               => trim((string)($data['sku'] ?? '')),
     'description'       => (string)($data['description'] ?? ''),
     'short_description' => (string)($data['short_description'] ?? ''),
-    'categories'        => array_map(fn($c) => ['id' => (int)$c['id']], (array)($data['categories'] ?? [])),
-    'images'            => $images, // 👈 استفاده از لیست تصاویر بهینه‌سازی‌شده
+    'categories'        => array_values(array_filter(array_map(
+        static function ($c): ?array {
+            $categoryId = is_array($c) ? (int)($c['id'] ?? 0) : 0;
+            return $categoryId > 0 ? ['id' => $categoryId] : null;
+        },
+        (array)($data['categories'] ?? [])
+    ))),
+    'images'            => $images,
     'attributes'        => $attributes,
 ];
 
-// Handle meta_data (including video attachment ID)
-if (!empty($data['meta_data']) && is_array($data['meta_data'])) {
-    $payload['meta_data'] = $data['meta_data'];
+// Only metadata explicitly supported by this panel may be written. Arbitrary
+// meta keys from the browser are intentionally ignored.
+$allowedMetaKeys = ['_bajistyle_product_video_id'];
+$metaData = [];
+foreach ((array)($data['meta_data'] ?? []) as $meta) {
+    if (!is_array($meta)) {
+        continue;
+    }
+    $key = (string)($meta['key'] ?? '');
+    if (!in_array($key, $allowedMetaKeys, true)) {
+        continue;
+    }
+
+    if ($key === '_bajistyle_product_video_id') {
+        $videoId = (int)($meta['value'] ?? 0);
+        $metaData[] = ['key' => $key, 'value' => $videoId > 0 ? $videoId : ''];
+    }
+}
+if ($metaData) {
+    $payload['meta_data'] = $metaData;
 }
 
 if ($type === 'simple') {
@@ -114,19 +137,18 @@ if ($type === 'simple') {
     $payload['stock_status']  = in_array($data['stock_status'] ?? '', ['instock', 'outofstock', 'onbackorder'], true) ? $data['stock_status'] : 'instock';
     $payload['manage_stock']  = !empty($data['manage_stock']);
     if ($payload['manage_stock']) {
-        $payload['stock_quantity'] = (int)($data['stock_quantity'] ?? 0);
+        $payload['stock_quantity'] = max(0, (int)($data['stock_quantity'] ?? 0));
     }
 } else {
-    // برای محصول متغیر، قیمت‌گذاری و موجودی در سطح تنوع مدیریت می‌شود
     $payload['manage_stock'] = false;
 }
 
 $res = $id > 0 ? $wc->updateProduct($id, $payload) : $wc->createProduct($payload);
 
 if ($res['error']) {
-    jsonResponse(['success' => false, 'message' => $res['error']]);
+    error_log('[wc-manager] product save failed id=' . $id . ': ' . $res['error']);
+    jsonResponse(['success' => false, 'message' => 'ذخیره محصول در ووکامرس ناموفق بود.'], 502);
 }
 
 logActivity($id > 0 ? 'update_product' : 'create_product', 'product', $name);
-
 jsonResponse(['success' => true, 'product' => $res['body']]);
