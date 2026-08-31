@@ -1,75 +1,84 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
 Auth::requireLogin();
-header('Content-Type: application/json');
+requirePostAndCsrfOrFail();
 
-// دریافت داده‌ها از FormData
-$postId     = isset($_POST['id']) ? (int)$_POST['id'] : 0;
-$title      = isset($_POST['title']) ? trim($_POST['title']) : '';
-$content    = isset($_POST['content']) ? trim($_POST['content']) : '';
-$status     = isset($_POST['status']) ? trim($_POST['status']) : 'draft';
-$categoryId = isset($_POST['category_id']) ? (int)$_POST['category_id'] : 0;
+$postId = (int)($_POST['id'] ?? 0);
+$title = trim((string)($_POST['title'] ?? ''));
+$content = trim((string)($_POST['content'] ?? ''));
+$status = trim((string)($_POST['status'] ?? 'draft'));
+$categoryId = (int)($_POST['category_id'] ?? 0);
+$allowedStatuses = ['publish', 'draft', 'pending', 'private'];
 
-if (!$postId) {
-    echo json_encode(['success' => false, 'message' => 'شناسه مقاله نامعتبر است.']);
-    exit;
+if ($postId <= 0) {
+    jsonResponse(['success' => false, 'message' => 'شناسه مقاله نامعتبر است.'], 422);
+}
+if ($title === '' || $content === '') {
+    jsonResponse(['success' => false, 'message' => 'عنوان و محتوا نمی‌تواند خالی باشد.'], 422);
+}
+if (mb_strlen($title, 'UTF-8') > 300) {
+    jsonResponse(['success' => false, 'message' => 'عنوان مقاله بیش از حد طولانی است.'], 422);
+}
+if (!in_array($status, $allowedStatuses, true)) {
+    jsonResponse(['success' => false, 'message' => 'وضعیت مقاله نامعتبر است.'], 422);
 }
 
-if (empty($title) || empty($content)) {
-    echo json_encode(['success' => false, 'message' => 'عنوان و محتوا نمی‌تواند خالی باشد.']);
-    exit;
+$featuredImage = $_FILES['featured_image'] ?? null;
+if (is_array($featuredImage) && ($featuredImage['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+    if (($featuredImage['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        jsonResponse(['success' => false, 'message' => 'آپلود تصویر شاخص ناموفق بود.'], 422);
+    }
+
+    $tmpName = (string)($featuredImage['tmp_name'] ?? '');
+    $size = (int)($featuredImage['size'] ?? 0);
+    if ($tmpName === '' || !is_uploaded_file($tmpName) || $size <= 0 || $size > 10 * 1024 * 1024) {
+        jsonResponse(['success' => false, 'message' => 'فایل تصویر شاخص نامعتبر است یا حجم آن بیش از ۱۰ مگابایت است.'], 422);
+    }
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string)$finfo->file($tmpName);
+    if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
+        jsonResponse(['success' => false, 'message' => 'فرمت تصویر شاخص مجاز نیست.'], 422);
+    }
 }
 
 try {
     $wc = new WooCommerceClient();
-
-    // ویرایش مقاله به همراه دسته‌بندی
-    $categoryIds = [];
-    if ($categoryId > 0) {
-        $categoryIds = [$categoryId];
+    if (!$wc->isWpConfigured()) {
+        jsonResponse(['success' => false, 'message' => 'تنظیمات اتصال به وردپرس کامل نیست.'], 422);
     }
 
+    $categoryIds = $categoryId > 0 ? [$categoryId] : [];
     $result = $wc->updatePostWithCategories($postId, $title, $content, $status, $categoryIds);
-
     if (!empty($result['error'])) {
-        echo json_encode(['success' => false, 'message' => 'خطا در ویرایش مقاله: ' . $result['error']]);
-        exit;
+        error_log('[wc-manager] update magazine post failed post=' . $postId . ': ' . $result['error']);
+        jsonResponse(['success' => false, 'message' => 'ویرایش مقاله در وردپرس ناموفق بود.'], 502);
     }
 
-    // اگر تصویر جدید آپلود شده، آن را جایگزین کنیم
-    if (isset($_FILES['featured_image']) && $_FILES['featured_image']['error'] === UPLOAD_ERR_OK) {
-        $tmpFile = $_FILES['featured_image']['tmp_name'];
-        $fileName = $_FILES['featured_image']['name'];
-
-        // آپلود تصویر جدید
-        $uploadResult = $wc->uploadMedia($tmpFile, $fileName);
+    if (is_array($featuredImage) && ($featuredImage['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+        $uploadResult = $wc->uploadMedia(
+            (string)$featuredImage['tmp_name'],
+            basename((string)($featuredImage['name'] ?? 'featured-image'))
+        );
 
         if (!empty($uploadResult['error'])) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'مقاله ویرایش شد اما خطا در آپلود تصویر: ' . $uploadResult['error']
-            ]);
-            exit;
+            error_log('[wc-manager] update featured image upload failed post=' . $postId . ': ' . $uploadResult['error']);
+            jsonResponse(['success' => false, 'message' => 'مقاله ویرایش شد، اما آپلود تصویر جدید ناموفق بود.'], 502);
         }
 
-        $mediaId = $uploadResult['body']['id'] ?? null;
-
-        // تنظیم تصویر جدید به عنوان featured image
-        if ($mediaId) {
+        $mediaId = (int)($uploadResult['body']['id'] ?? 0);
+        if ($mediaId > 0) {
             $setFeaturedResult = $wc->setPostFeaturedImage($postId, $mediaId);
-
             if (!empty($setFeaturedResult['error'])) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'مقاله و تصویر آپلود شدند اما خطا در تنظیم تصویر شاخص: ' . $setFeaturedResult['error']
-                ]);
-                exit;
+                error_log('[wc-manager] update featured image assignment failed post=' . $postId . ': ' . $setFeaturedResult['error']);
+                jsonResponse(['success' => false, 'message' => 'تصویر آپلود شد، اما تنظیم تصویر شاخص ناموفق بود.'], 502);
             }
         }
     }
 
-    echo json_encode(['success' => true, 'message' => 'مقاله با موفقیت ویرایش شد.']);
-
-} catch (Exception $e) {
-    echo json_encode(['success' => false, 'message' => 'خطای سیستمی: ' . $e->getMessage()]);
+    logActivity('update_magazine_post', 'post', (string)$postId);
+    jsonResponse(['success' => true, 'message' => 'مقاله با موفقیت ویرایش شد.']);
+} catch (Throwable $e) {
+    error_log('[wc-manager] update magazine post exception: ' . $e->getMessage());
+    jsonResponse(['success' => false, 'message' => 'خطای داخلی هنگام ویرایش مقاله رخ داد.'], 500);
 }
