@@ -439,6 +439,16 @@ class BasalamClient
             return ['path' => '', 'error' => 'آدرس تصویر معتبر نیست.'];
         }
 
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            return ['path' => '', 'error' => 'آدرس تصویر نباید شامل اطلاعات ورود باشد.'];
+        }
+
+        $scheme = strtolower((string)$parts['scheme']);
+        $port = isset($parts['port']) ? (int)$parts['port'] : ($scheme === 'https' ? 443 : 80);
+        if (!in_array($port, [80, 443], true)) {
+            return ['path' => '', 'error' => 'پورت آدرس تصویر مجاز نیست.'];
+        }
+
         $host = (string)$parts['host'];
         $ips = gethostbynamel($host);
         if (!$ips) {
@@ -473,6 +483,8 @@ class BasalamClient
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
+            // Pin DNS to the already-validated public IP to prevent DNS rebinding.
+            CURLOPT_RESOLVE => [$host . ':' . $port . ':' . $ips[0]],
             // Never follow redirects here: a public URL could redirect to a private/reserved IP (SSRF).
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => 15,
