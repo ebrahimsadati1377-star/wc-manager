@@ -107,7 +107,7 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "mkdir -p '$DEPLOY_PATH/.deploy-backups'"
 
-          rsync -az --delete \
+          rsync -rz --delete \
             --backup --backup-dir="$BACKUP_DIR" \
             --exclude='.git/' \
             --exclude='.github/' \
