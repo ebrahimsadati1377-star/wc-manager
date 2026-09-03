@@ -60,6 +60,7 @@ $user = Auth::user();
         <?php if (Auth::isAdmin()): ?>
         <li class="nav-item"><a class="nav-link" href="users.php">کاربران</a></li>
         <li class="nav-item"><a class="nav-link" href="settings.php">تنظیمات اتصال</a></li>
+        <li class="nav-item"><a class="nav-link" href="chatgpt.php">اتصال ChatGPT</a></li>
         <?php endif; ?>
       </ul>
       <ul class="navbar-nav">
