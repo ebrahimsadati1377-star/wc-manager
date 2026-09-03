@@ -171,8 +171,7 @@ class BasalamClient
             CURLOPT_TIMEOUT => 90,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_FOLLOWLOCATION => false,
         ]);
 
         return $this->execute($ch);
@@ -233,8 +232,7 @@ class BasalamClient
             CURLOPT_TIMEOUT => 60,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_FOLLOWLOCATION => false,
         ];
 
         if ($body !== null) {
