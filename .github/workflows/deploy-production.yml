@@ -22,6 +22,8 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      deploy_configured: ${{ steps.deploy_secrets.outputs.configured }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,24 +37,36 @@ jobs:
           done < <(find . -type f -name '*.php' -not -path './.git/*' -print0)
           echo "PHP lint passed."
 
-      - name: Validate required deployment secrets
+      - name: Check deployment configuration
+        id: deploy_secrets
         shell: bash
         env:
           SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          missing=0
+          missing=()
           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
             if [[ -z "${!name:-}" ]]; then
-              echo "::error::Missing required secret: $name"
-              missing=1
+              missing+=("$name")
             fi
           done
-          exit "$missing"
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo '### Production deploy is not configured yet'
+              echo ''
+              echo 'PHP validation passed, but deployment was skipped because these secrets are missing:'
+              for name in "${missing[@]}"; do echo "- \`$name\`"; done
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     needs: validate
+    if: needs.validate.outputs.deploy_configured == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
