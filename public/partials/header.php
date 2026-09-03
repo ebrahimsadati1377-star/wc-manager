@@ -58,6 +58,7 @@ $user = Auth::user();
         <li class="nav-item"><a class="nav-link" href="products.php">محصولات</a></li>
         <li class="nav-item"><a class="nav-link" href="categories.php">دسته‌بندی‌ها</a></li>
         <?php if (Auth::isAdmin()): ?>
+        <li class="nav-item"><a class="nav-link" href="basalam.php">باسلام</a></li>
         <li class="nav-item"><a class="nav-link" href="users.php">کاربران</a></li>
         <li class="nav-item"><a class="nav-link" href="settings.php">تنظیمات اتصال</a></li>
         <li class="nav-item"><a class="nav-link" href="chatgpt.php">اتصال ChatGPT</a></li>
