@@ -1,0 +1,145 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: wc-manager-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+  HEALTHCHECK_URL: ${{ secrets.DEPLOY_HEALTHCHECK_URL }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PHP syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            php -l "$file" >/dev/null
+          done < <(find . -type f -name '*.php' -not -path './.git/*' -print0)
+          echo "PHP lint passed."
+
+      - name: Validate required deployment secrets
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required secret: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify SSH and deployment directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "test -d '$DEPLOY_PATH' && test -w '$DEPLOY_PATH' && printf 'SSH/deploy path OK\\n'"
+
+      - name: Deploy with backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          TS="$(date -u +%Y%m%dT%H%M%SZ)"
+          BACKUP_DIR=".deploy-backups/$TS"
+
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_PATH/.deploy-backups'"
+
+          rsync -az --delete \
+            --backup --backup-dir="$BACKUP_DIR" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.deploy-backups/' \
+            --exclude='config/config.php' \
+            --exclude='public/uploads/' \
+            --exclude='public/uploads/***' \
+            -e "ssh -p $PORT -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+          echo "DEPLOY_BACKUP=$DEPLOY_PATH/$BACKUP_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify deployed PHP syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -e; find '$DEPLOY_PATH/includes' '$DEPLOY_PATH/public' -type f -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null; echo 'Remote PHP lint passed.'"
+
+      - name: Health check
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="${HEALTHCHECK_URL:-https://manage.bajistyle.ir/login.php}"
+          for attempt in 1 2 3 4 5; do
+            code="$(curl -L --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 "$URL" || true)"
+            if [[ "$code" =~ ^(200|301|302|303|307|308)$ ]]; then
+              echo "Health check passed: HTTP $code"
+              exit 0
+            fi
+            echo "Health check attempt $attempt failed: HTTP ${code:-none}"
+            sleep 5
+          done
+          echo "::error::Production health check failed. Backup of changed/deleted files: $DEPLOY_BACKUP"
+          exit 1
+
+      - name: Deployment summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '### Production deployment successful'
+            echo ''
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Target: \`${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}\`"
+            echo "- Backup: \`${DEPLOY_BACKUP}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
