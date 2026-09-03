@@ -245,13 +245,24 @@ paths:
   /basalam-products.php:
     get:
       operationId: listBasalamProducts
-      summary: List products in the configured Basalam vendor.
+      summary: List or filter products in the configured Basalam vendor.
       parameters:
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
         - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
-        - { name: search, in: query, schema: { type: string } }
-        - { name: status, in: query, schema: { type: string } }
-        - { name: category_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: title, in: query, description: Filter by product title, schema: { type: string } }
+        - { name: category, in: query, description: Comma-separated Basalam category IDs, schema: { type: string } }
+        - { name: statuses, in: query, description: Comma-separated Basalam product status IDs, schema: { type: string } }
+        - { name: ids, in: query, description: Comma-separated Basalam product IDs, schema: { type: string } }
+        - { name: skus, in: query, description: Comma-separated SKUs, schema: { type: string } }
+        - { name: stock_gte, in: query, schema: { type: integer } }
+        - { name: stock_lte, in: query, schema: { type: integer } }
+        - { name: price_gte, in: query, schema: { type: integer } }
+        - { name: price_lte, in: query, schema: { type: integer } }
+        - { name: preparation_day_gte, in: query, schema: { type: integer } }
+        - { name: preparation_day_lte, in: query, schema: { type: integer } }
+        - { name: variants_flatting, in: query, schema: { type: boolean } }
+        - { name: is_wholesale, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string } }
       responses:
         '200':
           description: Basalam product list.
