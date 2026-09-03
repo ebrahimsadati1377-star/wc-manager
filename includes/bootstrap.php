@@ -66,6 +66,8 @@ require_once __DIR__ . '/Database.php';
 require_once __DIR__ . '/Helpers.php';
 require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/WooCommerceClient.php';
+require_once __DIR__ . '/BasalamClient.php';
+require_once __DIR__ . '/BasalamSync.php';
 
 // Every endpoint inside public/ajax is protected centrally. Existing endpoint-
 // level CSRF checks remain harmless defense in depth.

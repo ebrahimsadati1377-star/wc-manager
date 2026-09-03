@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: BajiStyle WooCommerce Manager API
-  version: 1.0.0
-  description: Secure product-management API exposed by WC Manager for ChatGPT.
+  version: 1.1.0
+  description: Secure WooCommerce and Basalam product-management API exposed by WC Manager for ChatGPT.
 servers:
   - url: https://manage.bajistyle.ir/api
 components:
@@ -75,13 +75,40 @@ components:
         image:
           type: object
           additionalProperties: true
+    BasalamSyncInput:
+      type: object
+      required: [wc_product_id]
+      properties:
+        wc_product_id:
+          type: integer
+          minimum: 1
+          description: WooCommerce product ID to create/update on Basalam.
+        force:
+          type: boolean
+          default: false
+          description: Force sync even when the WooCommerce product hash is unchanged.
+    BasalamBatchSyncInput:
+      type: object
+      required: [wc_product_ids]
+      properties:
+        wc_product_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+        force:
+          type: boolean
+          default: false
 security:
   - bearerAuth: []
 paths:
   /health.php:
     get:
       operationId: checkConnection
-      summary: Check API and WooCommerce connectivity.
+      summary: Check WC Manager and WooCommerce connectivity.
       responses:
         '200':
           description: Connected.
@@ -141,7 +168,7 @@ paths:
   /variations.php:
     get:
       operationId: listVariations
-      summary: List variations for a variable product.
+      summary: List variations for a variable WooCommerce product.
       parameters:
         - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
@@ -151,7 +178,7 @@ paths:
           description: Variations.
     post:
       operationId: createVariation
-      summary: Create a variation.
+      summary: Create a WooCommerce variation.
       parameters:
         - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:
@@ -165,7 +192,7 @@ paths:
           description: Variation created.
     put:
       operationId: updateVariation
-      summary: Update a variation.
+      summary: Update a WooCommerce variation.
       parameters:
         - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
         - { name: variation_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
@@ -181,7 +208,7 @@ paths:
   /categories.php:
     get:
       operationId: listCategories
-      summary: List product categories.
+      summary: List WooCommerce product categories.
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: parent, in: query, schema: { type: integer } }
@@ -190,7 +217,7 @@ paths:
           description: Categories.
     post:
       operationId: createCategory
-      summary: Create a product category.
+      summary: Create a WooCommerce product category.
       requestBody:
         required: true
         content:
@@ -208,7 +235,7 @@ paths:
           description: Category created.
     put:
       operationId: updateCategory
-      summary: Update a product category.
+      summary: Update a WooCommerce product category.
       parameters:
         - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:
@@ -224,9 +251,76 @@ paths:
   /attributes.php:
     get:
       operationId: listAttributesOrTerms
-      summary: List global attributes, or terms when attribute_id is provided.
+      summary: List WooCommerce global attributes, or terms when attribute_id is provided.
       parameters:
         - { name: attribute_id, in: query, schema: { type: integer, minimum: 1 } }
       responses:
         '200':
           description: Attributes or terms.
+  /basalam-products.php:
+    get:
+      operationId: listBasalamProducts
+      summary: List or filter products in the configured Basalam vendor.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: title, in: query, description: Filter by product title, schema: { type: string } }
+        - { name: category, in: query, description: Comma-separated Basalam category IDs, schema: { type: string } }
+        - { name: statuses, in: query, description: Comma-separated Basalam product status IDs, schema: { type: string } }
+        - { name: ids, in: query, description: Comma-separated Basalam product IDs, schema: { type: string } }
+        - { name: skus, in: query, description: Comma-separated SKUs, schema: { type: string } }
+        - { name: stock_gte, in: query, schema: { type: integer } }
+        - { name: stock_lte, in: query, schema: { type: integer } }
+        - { name: price_gte, in: query, schema: { type: integer } }
+        - { name: price_lte, in: query, schema: { type: integer } }
+        - { name: preparation_day_gte, in: query, schema: { type: integer } }
+        - { name: preparation_day_lte, in: query, schema: { type: integer } }
+        - { name: variants_flatting, in: query, schema: { type: boolean } }
+        - { name: is_wholesale, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Basalam product list.
+  /basalam-product.php:
+    get:
+      operationId: getBasalamProduct
+      summary: Get a Basalam product with variants and details.
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Basalam product.
+  /basalam-sync.php:
+    post:
+      operationId: syncWooProductToBasalam
+      summary: Create or update one Basalam product from its WooCommerce source product.
+      description: WooCommerce remains the source of truth. Category mapping must already exist in WC Manager.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BasalamSyncInput'
+      responses:
+        '200':
+          description: Product synchronized to Basalam.
+        '422':
+          description: Sync could not be completed, for example because category mapping is missing.
+  /basalam-sync-batch.php:
+    post:
+      operationId: syncWooProductsToBasalamBatch
+      summary: Synchronize up to 20 WooCommerce products to Basalam in one request.
+      description: Use this for bounded catalog batches. WooCommerce remains the source of truth and category mappings must already exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BasalamBatchSyncInput'
+      responses:
+        '200':
+          description: All requested products were synchronized or skipped as unchanged.
+        '207':
+          description: Batch completed with one or more product-level failures.
+        '422':
+          description: Invalid or oversized batch.
