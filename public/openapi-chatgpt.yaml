@@ -1,0 +1,232 @@
+openapi: 3.1.0
+info:
+  title: BajiStyle WooCommerce Manager API
+  version: 1.0.0
+  description: Secure product-management API exposed by WC Manager for ChatGPT.
+servers:
+  - url: https://manage.bajistyle.ir/api
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ProductInput:
+      type: object
+      additionalProperties: true
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [simple, grouped, external, variable] }
+        status: { type: string, enum: [draft, pending, private, publish] }
+        description: { type: string }
+        short_description: { type: string }
+        sku: { type: string }
+        regular_price: { type: string }
+        sale_price: { type: string }
+        manage_stock: { type: boolean }
+        stock_quantity: { type: integer }
+        stock_status: { type: string, enum: [instock, outofstock, onbackorder] }
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+        tags:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              src: { type: string, format: uri }
+              name: { type: string }
+              alt: { type: string }
+        attributes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        default_attributes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    VariationInput:
+      type: object
+      additionalProperties: true
+      properties:
+        sku: { type: string }
+        regular_price: { type: string }
+        sale_price: { type: string }
+        manage_stock: { type: boolean }
+        stock_quantity: { type: integer }
+        stock_status: { type: string, enum: [instock, outofstock, onbackorder] }
+        attributes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        image:
+          type: object
+          additionalProperties: true
+security:
+  - bearerAuth: []
+paths:
+  /health.php:
+    get:
+      operationId: checkConnection
+      summary: Check API and WooCommerce connectivity.
+      responses:
+        '200':
+          description: Connected.
+  /products.php:
+    get:
+      operationId: listProducts
+      summary: List or search WooCommerce products.
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: sku, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: stock_status, in: query, schema: { type: string } }
+        - { name: orderby, in: query, schema: { type: string } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200':
+          description: Product list.
+    post:
+      operationId: createProduct
+      summary: Create a WooCommerce product.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          description: Product created.
+  /product.php:
+    get:
+      operationId: getProduct
+      summary: Get one WooCommerce product.
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Product.
+    put:
+      operationId: updateProduct
+      summary: Update a WooCommerce product. Never delete products through this API.
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '200':
+          description: Product updated.
+  /variations.php:
+    get:
+      operationId: listVariations
+      summary: List variations for a variable product.
+      parameters:
+        - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Variations.
+    post:
+      operationId: createVariation
+      summary: Create a variation.
+      parameters:
+        - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VariationInput'
+      responses:
+        '201':
+          description: Variation created.
+    put:
+      operationId: updateVariation
+      summary: Update a variation.
+      parameters:
+        - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: variation_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VariationInput'
+      responses:
+        '200':
+          description: Variation updated.
+  /categories.php:
+    get:
+      operationId: listCategories
+      summary: List product categories.
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: parent, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Categories.
+    post:
+      operationId: createCategory
+      summary: Create a product category.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                parent: { type: integer }
+                description: { type: string }
+      responses:
+        '201':
+          description: Category created.
+    put:
+      operationId: updateCategory
+      summary: Update a product category.
+      parameters:
+        - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Category updated.
+  /attributes.php:
+    get:
+      operationId: listAttributesOrTerms
+      summary: List global attributes, or terms when attribute_id is provided.
+      parameters:
+        - { name: attribute_id, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: Attributes or terms.
