@@ -473,8 +473,8 @@ class BasalamClient
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 3,
+            // Never follow redirects here: a public URL could redirect to a private/reserved IP (SSRF).
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_TIMEOUT => 45,
             CURLOPT_SSL_VERIFYPEER => true,
