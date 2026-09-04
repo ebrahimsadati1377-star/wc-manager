@@ -3,7 +3,6 @@ require_once __DIR__ . '/../includes/bootstrap.php';
 Auth::requireLogin();
 
 $basalam = new BasalamClient();
-$sync = new BasalamSync();
 
 $search = trim((string)($_GET['s'] ?? ''));
 $marketFilter = trim((string)($_GET['market_status'] ?? ''));
@@ -38,85 +37,30 @@ function basalamCatalogStatus(array $product): array
     $hasAvailable = array_key_exists('is_available', $product);
     $showable = $hasShowable ? (bool)$product['is_showable'] : null;
     $available = $hasAvailable ? (bool)$product['is_available'] : null;
-
     $normalizedName = str_replace(['ي', 'ك'], ['ی', 'ک'], $name);
 
     if ($value === 2976 || ($showable === true && $available === true)) {
-        return [
-            'key' => 'available',
-            'label' => $name !== '' ? $name : 'در دسترس',
-            'color' => 'success',
-            'value' => $value,
-            'showable' => $showable,
-            'available' => $available,
-        ];
+        return ['key'=>'available','label'=>$name !== '' ? $name : 'در دسترس','color'=>'success','value'=>$value,'showable'=>$showable,'available'=>$available];
     }
-
-    if (
-        $value === 3568
-        || basalamCatalogContains($normalizedName, 'در انتظار')
-        || basalamCatalogContains($normalizedName, 'بررسی')
-    ) {
-        return [
-            'key' => 'pending',
-            'label' => $name !== '' ? $name : 'در انتظار بررسی/تایید',
-            'color' => 'warning',
-            'value' => $value,
-            'showable' => $showable,
-            'available' => $available,
-        ];
+    if ($value === 3568 || basalamCatalogContains($normalizedName, 'در انتظار') || basalamCatalogContains($normalizedName, 'بررسی')) {
+        return ['key'=>'pending','label'=>$name !== '' ? $name : 'در انتظار بررسی/تایید','color'=>'warning','value'=>$value,'showable'=>$showable,'available'=>$available];
     }
-
-    if (
-        $value === 3567
-        || basalamCatalogContains($normalizedName, 'تایید نشده')
-        || basalamCatalogContains($normalizedName, 'رد شده')
-        || basalamCatalogContains($normalizedName, 'ردشده')
-    ) {
-        return [
-            'key' => 'rejected',
-            'label' => $name !== '' ? $name : 'تایید نشده',
-            'color' => 'danger',
-            'value' => $value,
-            'showable' => $showable,
-            'available' => $available,
-        ];
+    if ($value === 3567 || basalamCatalogContains($normalizedName, 'تایید نشده') || basalamCatalogContains($normalizedName, 'رد شده') || basalamCatalogContains($normalizedName, 'ردشده')) {
+        return ['key'=>'rejected','label'=>$name !== '' ? $name : 'تایید نشده','color'=>'danger','value'=>$value,'showable'=>$showable,'available'=>$available];
     }
-
-    if (
-        $value === 3790
-        || basalamCatalogContains($normalizedName, 'منتشر نشده')
-        || basalamCatalogContains($normalizedName, 'عدم انتشار')
-    ) {
-        return [
-            'key' => 'unpublished',
-            'label' => $name !== '' ? $name : 'منتشر نشده',
-            'color' => 'secondary',
-            'value' => $value,
-            'showable' => $showable,
-            'available' => $available,
-        ];
+    if ($value === 3790 || basalamCatalogContains($normalizedName, 'منتشر نشده') || basalamCatalogContains($normalizedName, 'عدم انتشار')) {
+        return ['key'=>'unpublished','label'=>$name !== '' ? $name : 'منتشر نشده','color'=>'secondary','value'=>$value,'showable'=>$showable,'available'=>$available];
     }
-
     if ($showable === false && $available === false) {
-        return [
-            'key' => 'inactive',
-            'label' => $name !== '' ? $name : 'غیرفعال / غیرقابل نمایش',
-            'color' => 'dark',
-            'value' => $value,
-            'showable' => $showable,
-            'available' => $available,
-        ];
+        return ['key'=>'inactive','label'=>$name !== '' ? $name : 'غیرفعال / غیرقابل نمایش','color'=>'dark','value'=>$value,'showable'=>$showable,'available'=>$available];
     }
+    return ['key'=>'unknown','label'=>$name !== '' ? $name : 'وضعیت نامشخص','color'=>'secondary','value'=>$value,'showable'=>$showable,'available'=>$available];
+}
 
-    return [
-        'key' => 'unknown',
-        'label' => $name !== '' ? $name : 'وضعیت نامشخص',
-        'color' => 'secondary',
-        'value' => $value,
-        'showable' => $showable,
-        'available' => $available,
-    ];
+function basalamCatalogPhoto(array $product): string
+{
+    $photo = is_array($product['photo'] ?? null) ? $product['photo'] : [];
+    return (string)($photo['sm'] ?? $photo['xs'] ?? $photo['md'] ?? '');
 }
 
 if (!$basalam->isConfigured()) {
@@ -149,9 +93,7 @@ if (!$basalam->isConfigured()) {
 
 $wooByBasalam = [];
 try {
-    $stmt = Database::get()->query(
-        'SELECT wc_product_id, basalam_product_id FROM basalam_product_map WHERE basalam_product_id IS NOT NULL AND basalam_product_id > 0'
-    );
+    $stmt = Database::get()->query('SELECT wc_product_id, basalam_product_id FROM basalam_product_map WHERE basalam_product_id IS NOT NULL AND basalam_product_id > 0');
     foreach ($stmt->fetchAll() as $row) {
         $basalamId = (int)($row['basalam_product_id'] ?? 0);
         if ($basalamId > 0) $wooByBasalam[$basalamId] = (int)($row['wc_product_id'] ?? 0);
@@ -160,15 +102,7 @@ try {
     error_log('[wc-manager] basalam catalog mapping lookup failed: ' . $e->getMessage());
 }
 
-$stats = [
-    'all' => count($products),
-    'available' => 0,
-    'pending' => 0,
-    'rejected' => 0,
-    'unpublished' => 0,
-    'inactive' => 0,
-    'unknown' => 0,
-];
+$stats = ['all'=>count($products),'available'=>0,'pending'=>0,'rejected'=>0,'unpublished'=>0,'inactive'=>0,'unknown'=>0];
 foreach ($products as $product) {
     $key = (string)($product['_market']['key'] ?? 'unknown');
     if (!array_key_exists($key, $stats)) $key = 'unknown';
@@ -180,7 +114,6 @@ if ($search !== '' || $marketFilter !== '') {
         $market = $product['_market'] ?? [];
         if ($marketFilter !== '' && ($market['key'] ?? '') !== $marketFilter) return false;
         if ($search === '') return true;
-
         $haystack = implode(' ', [
             (string)($product['id'] ?? ''),
             (string)($product['name'] ?? $product['title'] ?? ''),
@@ -195,12 +128,41 @@ $pageTitle = 'وضعیت کاتالوگ باسلام';
 require __DIR__ . '/partials/header.php';
 ?>
 
+<style>
+.catalog-thumb{width:58px;height:58px;object-fit:cover;border-radius:10px;background:#f3f4f6;border:1px solid #e9ecef;flex:0 0 58px}
+.catalog-product-title{min-width:0}
+.catalog-reason-box{max-width:560px;white-space:normal;line-height:1.8}
+.catalog-reason-box ul{padding-right:1.2rem;margin-bottom:.5rem}
+.catalog-illegal-photo{display:flex;gap:.6rem;align-items:flex-start;padding:.45rem 0;border-top:1px dashed #dee2e6}
+.catalog-illegal-photo img{width:52px;height:52px;object-fit:cover;border-radius:8px;background:#f3f4f6}
+@media (max-width:767.98px){
+  .catalog-table-card{background:transparent!important;border:0!important}
+  .catalog-table-card .table-responsive{overflow:visible}
+  .basalam-catalog-table{display:block;border:0;background:transparent}
+  .basalam-catalog-table thead{display:none}
+  .basalam-catalog-table tbody{display:block}
+  .basalam-catalog-table tr{display:block;background:#fff;border:1px solid #e6e8eb;border-radius:16px;margin-bottom:12px;padding:13px 14px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+  .basalam-catalog-table tr.empty-row{padding:0}
+  .basalam-catalog-table td{display:flex;width:100%;border:0!important;padding:6px 0!important;justify-content:space-between;align-items:flex-start;gap:14px;text-align:right!important;white-space:normal!important}
+  .basalam-catalog-table td[data-label]::before{content:attr(data-label);color:#6c757d;font-size:.78rem;font-weight:600;flex:0 0 86px;line-height:1.7}
+  .basalam-catalog-table td.catalog-main-cell{display:block;padding-bottom:11px!important;margin-bottom:3px;border-bottom:1px solid #f0f1f2!important}
+  .basalam-catalog-table td.catalog-main-cell::before{display:none}
+  .basalam-catalog-table td.catalog-detail-cell{display:block}
+  .basalam-catalog-table td.catalog-detail-cell::before{display:none}
+  .basalam-catalog-table td.catalog-actions-cell{justify-content:flex-start;flex-wrap:wrap;padding-top:10px!important}
+  .basalam-catalog-table td.catalog-actions-cell::before{display:none}
+  .catalog-reason-box{max-width:none;width:100%;background:#fff8e1;border-radius:10px;padding:10px 11px;margin-top:8px}
+  .catalog-filter-actions{display:grid!important;grid-template-columns:1fr 1fr;width:100%}
+  .catalog-filter-actions .btn{width:100%}
+}
+</style>
+
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div>
     <h3 class="mb-1">وضعیت محصولات در باسلام</h3>
-    <div class="text-muted small">وضعیت واقعی انتشار، نمایش و امکان خرید محصولات غرفه</div>
+    <div class="text-muted small">وضعیت واقعی انتشار، نمایش، امکان خرید و دلیل رد/عدم انتشار</div>
   </div>
-  <div class="d-flex gap-2 flex-wrap">
+  <div class="d-flex gap-2 flex-wrap catalog-filter-actions">
     <a class="btn btn-outline-primary" href="basalam-products.php">سینک محصولات</a>
     <?php if (Auth::isAdmin()): ?><a class="btn btn-outline-secondary" href="basalam.php">تنظیمات باسلام</a><?php endif; ?>
   </div>
@@ -237,9 +199,7 @@ require __DIR__ . '/partials/header.php';
             <option value="unknown" <?= $marketFilter === 'unknown' ? 'selected' : '' ?>>نامشخص</option>
           </select>
         </div>
-        <div class="col-4 col-md-2 d-grid">
-          <button class="btn btn-primary">فیلتر</button>
-        </div>
+        <div class="col-4 col-md-2 d-grid"><button class="btn btn-primary">فیلتر</button></div>
       </form>
     </div>
   </div>
@@ -249,23 +209,17 @@ require __DIR__ . '/partials/header.php';
     <?php if ($search !== '' || $marketFilter !== ''): ?><a class="small" href="basalam-catalog.php">پاک کردن فیلترها</a><?php endif; ?>
   </div>
 
-  <div class="card">
+  <div class="card catalog-table-card">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 basalam-catalog-table">
         <thead class="table-light">
           <tr>
-            <th>محصول باسلام</th>
-            <th>SKU</th>
-            <th>وضعیت بازار</th>
-            <th>قابل نمایش</th>
-            <th>قابل خرید</th>
-            <th>ارتباط با Woo</th>
-            <th class="text-end">مشاهده</th>
+            <th>محصول باسلام</th><th>SKU</th><th>وضعیت بازار</th><th>قابل نمایش</th><th>قابل خرید</th><th>ارتباط با Woo</th><th>دلیل / جزئیات</th><th class="text-end">مشاهده</th>
           </tr>
         </thead>
         <tbody>
         <?php if (!$products): ?>
-          <tr><td colspan="7" class="text-center text-muted py-4">محصولی با این فیلتر پیدا نشد.</td></tr>
+          <tr class="empty-row"><td colspan="8" class="text-center text-muted py-4">محصولی با این فیلتر پیدا نشد.</td></tr>
         <?php endif; ?>
         <?php foreach ($products as $product): ?>
           <?php
@@ -274,29 +228,36 @@ require __DIR__ . '/partials/header.php';
             $showable = $market['showable'] ?? null;
             $available = $market['available'] ?? null;
             $wcId = (int)($wooByBasalam[$id] ?? 0);
+            $photo = basalamCatalogPhoto($product);
+            $needsDetail = ($market['key'] ?? '') !== 'available';
           ?>
-          <tr>
-            <td>
-              <div class="fw-semibold"><?= e($product['name'] ?? $product['title'] ?? ('#' . $id)) ?></div>
-              <div class="small text-muted">Basalam #<?= $id ?></div>
+          <tr id="catalog-row-<?= $id ?>">
+            <td class="catalog-main-cell">
+              <div class="d-flex align-items-start gap-3">
+                <?php if ($photo !== ''): ?><img class="catalog-thumb" src="<?= e($photo) ?>" alt="" loading="lazy"><?php endif; ?>
+                <div class="catalog-product-title">
+                  <div class="fw-semibold"><?= e($product['name'] ?? $product['title'] ?? ('#' . $id)) ?></div>
+                  <div class="small text-muted">Basalam #<?= $id ?></div>
+                </div>
+              </div>
             </td>
-            <td dir="ltr"><?= e(trim((string)($product['sku'] ?? '')) ?: '-') ?></td>
-            <td>
-              <span class="badge text-bg-<?= e((string)$market['color']) ?>"><?= e((string)$market['label']) ?></span>
-              <?php if ((int)($market['value'] ?? 0) > 0): ?><div class="small text-muted mt-1">کد وضعیت: <?= (int)$market['value'] ?></div><?php endif; ?>
+            <td data-label="SKU" dir="ltr"><?= e(trim((string)($product['sku'] ?? '')) ?: '-') ?></td>
+            <td data-label="وضعیت">
+              <div>
+                <span class="badge text-bg-<?= e((string)$market['color']) ?>"><?= e((string)$market['label']) ?></span>
+                <?php if ((int)($market['value'] ?? 0) > 0): ?><div class="small text-muted mt-1">کد: <?= (int)$market['value'] ?></div><?php endif; ?>
+              </div>
             </td>
-            <td>
-              <?php if ($showable === null): ?><span class="text-muted">-</span><?php elseif ($showable): ?><span class="badge text-bg-success">بله</span><?php else: ?><span class="badge text-bg-secondary">خیر</span><?php endif; ?>
+            <td data-label="قابل نمایش"><?php if ($showable === null): ?><span class="text-muted">-</span><?php elseif ($showable): ?><span class="badge text-bg-success">بله</span><?php else: ?><span class="badge text-bg-secondary">خیر</span><?php endif; ?></td>
+            <td data-label="قابل خرید"><?php if ($available === null): ?><span class="text-muted">-</span><?php elseif ($available): ?><span class="badge text-bg-success">بله</span><?php else: ?><span class="badge text-bg-secondary">خیر</span><?php endif; ?></td>
+            <td data-label="Woo"><?php if ($wcId > 0): ?><span class="badge text-bg-info">Woo #<?= $wcId ?></span><?php else: ?><span class="text-muted small">مپ نشده</span><?php endif; ?></td>
+            <td class="catalog-detail-cell" data-label="دلیل">
+              <?php if ($needsDetail): ?>
+                <button type="button" class="btn btn-sm btn-outline-warning moderation-detail-btn" data-id="<?= $id ?>">نمایش دلیل</button>
+                <div class="catalog-reason-box d-none" id="reason-<?= $id ?>"></div>
+              <?php else: ?><span class="text-muted small">-</span><?php endif; ?>
             </td>
-            <td>
-              <?php if ($available === null): ?><span class="text-muted">-</span><?php elseif ($available): ?><span class="badge text-bg-success">بله</span><?php else: ?><span class="badge text-bg-secondary">خیر</span><?php endif; ?>
-            </td>
-            <td>
-              <?php if ($wcId > 0): ?><span class="badge text-bg-info">Woo #<?= $wcId ?></span><?php else: ?><span class="text-muted small">مپ نشده</span><?php endif; ?>
-            </td>
-            <td class="text-end text-nowrap">
-              <a class="btn btn-sm btn-outline-primary" href="https://basalam.com/p/<?= $id ?>" target="_blank" rel="noopener noreferrer">باز کردن</a>
-            </td>
+            <td class="catalog-actions-cell text-end text-nowrap"><a class="btn btn-sm btn-outline-primary" href="https://basalam.com/p/<?= $id ?>" target="_blank" rel="noopener noreferrer">باز کردن در باسلام</a></td>
           </tr>
         <?php endforeach; ?>
         </tbody>
@@ -304,5 +265,71 @@ require __DIR__ . '/partials/header.php';
     </div>
   </div>
 <?php endif; ?>
+
+<script>
+(function () {
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch]));
+  }
+
+  function renderDetail(box, data) {
+    const reasons = Array.isArray(data.reasons) ? data.reasons : [];
+    const illegal = Array.isArray(data.illegal_photos) ? data.illegal_photos : [];
+    let html = '';
+    if (data.message) html += '<div class="small mb-2">' + escapeHtml(data.message).replace(/\n/g,'<br>') + '</div>';
+    if (reasons.length) {
+      html += '<div class="fw-semibold small mb-1">دلیل باسلام:</div><ul class="small">';
+      reasons.forEach(r => { html += '<li>' + escapeHtml(r).replace(/\n/g,'<br>') + '</li>'; });
+      html += '</ul>';
+    } else {
+      html += '<div class="small text-muted">باسلام دلیل جزئی دیگری در API برنگرداند.</div>';
+    }
+    if (data.rejected_at) html += '<div class="small text-muted mb-2">زمان رد/بررسی: ' + escapeHtml(data.rejected_at) + '</div>';
+    if (illegal.length) {
+      html += '<details class="small"><summary>تصاویر مشکل‌دار (' + illegal.length + ')</summary><div class="mt-2">';
+      illegal.forEach(item => {
+        html += '<div class="catalog-illegal-photo">';
+        if (item.thumbnail) html += '<img src="' + escapeHtml(item.thumbnail) + '" alt="">';
+        html += '<div><div class="text-muted">File #' + escapeHtml(item.file_id) + '</div>';
+        (item.reasons || []).forEach(r => { html += '<div>' + escapeHtml(r).replace(/\n/g,'<br>') + '</div>'; });
+        html += '</div></div>';
+      });
+      html += '</div></details>';
+    }
+    box.innerHTML = html;
+    box.classList.remove('d-none');
+  }
+
+  document.querySelectorAll('.moderation-detail-btn').forEach(button => {
+    button.addEventListener('click', async function () {
+      const id = this.dataset.id;
+      const box = document.getElementById('reason-' + id);
+      if (!box) return;
+      if (box.dataset.loaded === '1') {
+        box.classList.toggle('d-none');
+        this.textContent = box.classList.contains('d-none') ? 'نمایش دلیل' : 'بستن جزئیات';
+        return;
+      }
+      const old = this.textContent;
+      this.disabled = true;
+      this.textContent = 'در حال دریافت...';
+      try {
+        const response = await fetch('ajax/basalam_product_status_detail.php?id=' + encodeURIComponent(id));
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || 'دریافت جزئیات ناموفق بود.');
+        renderDetail(box, data);
+        box.dataset.loaded = '1';
+        this.textContent = 'بستن جزئیات';
+      } catch (error) {
+        box.innerHTML = '<div class="text-danger small">' + escapeHtml(error.message || 'دریافت جزئیات ناموفق بود.') + '</div>';
+        box.classList.remove('d-none');
+        this.textContent = old;
+      } finally {
+        this.disabled = false;
+      }
+    });
+  });
+})();
+</script>
 
 <?php require __DIR__ . '/partials/footer.php'; ?>
