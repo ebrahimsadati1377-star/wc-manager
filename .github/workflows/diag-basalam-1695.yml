@@ -1,4 +1,4 @@
-name: Diagnose Basalam Woo 1695
+name: Diagnose Basalam Woo variable mappings
 
 on:
   push:
@@ -41,34 +41,37 @@ jobs:
           $wc = new WooCommerceClient();
           $client = new BasalamClient();
           $sync = new BasalamSync($wc, $client);
-          $vr = $wc->getVariations(1695, ['per_page' => 100]);
-          $pr = $client->getProduct(57616704, true);
           $ref = new ReflectionMethod(BasalamSync::class, 'getVariationMapsByProduct');
           $ref->setAccessible(true);
-          $maps = $ref->invoke($sync, 1695);
-          $woo = [];
-          foreach ((array)($vr['body'] ?? []) as $v) {
-              $woo[] = [
-                  'id'=>$v['id']??null,
-                  'sku'=>$v['sku']??null,
-                  'price'=>$v['price']??null,
-                  'stock'=>$v['stock_quantity']??null,
-                  'attributes'=>$v['attributes']??[],
-              ];
+          foreach ([[1695,57616704],[209,57613897]] as [$wooId,$basalamId]) {
+              $vr = $wc->getVariations($wooId, ['per_page' => 100]);
+              $pr = $client->getProduct($basalamId, true);
+              $maps = $ref->invoke($sync, $wooId);
+              $woo = [];
+              foreach ((array)($vr['body'] ?? []) as $v) {
+                  $woo[] = [
+                      'id'=>$v['id']??null,
+                      'sku'=>$v['sku']??null,
+                      'price'=>$v['price']??null,
+                      'stock'=>$v['stock_quantity']??null,
+                      'attributes'=>$v['attributes']??[],
+                  ];
+              }
+              $bv = [];
+              foreach ((array)($pr['body']['variants'] ?? []) as $v) {
+                  $bv[] = [
+                      'id'=>$v['id']??null,
+                      'sku'=>$v['sku']??null,
+                      'primary_price'=>$v['primary_price']??null,
+                      'stock'=>$v['stock']??null,
+                      'properties'=>$v['properties']??[],
+                      'title'=>$v['title']??($v['name']??null),
+                  ];
+              }
+              echo "CASE={$wooId}:{$basalamId}\n";
+              echo 'WOO_VARIANTS=' . json_encode($woo, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'BASALAM_VARIANTS=' . json_encode($bv, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'MAPS=' . json_encode($maps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'BASALAM_ERROR=' . ($pr['error'] ?? '') . PHP_EOL;
           }
-          $bv = [];
-          foreach ((array)($pr['body']['variants'] ?? []) as $v) {
-              $bv[] = [
-                  'id'=>$v['id']??null,
-                  'sku'=>$v['sku']??null,
-                  'primary_price'=>$v['primary_price']??null,
-                  'stock'=>$v['stock']??null,
-                  'properties'=>$v['properties']??[],
-                  'title'=>$v['title']??($v['name']??null),
-              ];
-          }
-          echo 'WOO_VARIANTS=' . json_encode($woo, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          echo 'BASALAM_VARIANTS=' . json_encode($bv, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          echo 'MAPS=' . json_encode($maps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          echo 'BASALAM_ERROR=' . ($pr['error'] ?? '') . PHP_EOL;
           PHP
