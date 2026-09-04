@@ -53,6 +53,7 @@ function basalamStatusMeta(?array $map): array
 
     return match ((string)($map['sync_status'] ?? 'pending')) {
         'synced' => ['سینک شده', 'success'],
+        'matched' => ['مپ شده', 'info'],
         'partial' => ['نیاز به بررسی', 'warning'],
         'error' => ['خطا', 'danger'],
         'unmatched' => ['ناهماهنگ', 'warning'],
@@ -77,7 +78,12 @@ require __DIR__ . '/partials/header.php';
     <div class="text-muted small"><?= e($total) ?> محصول در WooCommerce</div>
   </div>
   <?php if (Auth::isAdmin()): ?>
-    <a class="btn btn-outline-primary" href="basalam.php">تنظیمات باسلام</a>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" id="autoMatchBtn" class="btn btn-primary" <?= !$basalam->isConfigured() ? 'disabled' : '' ?>>
+        تطبیق خودکار محصولات موجود
+      </button>
+      <a class="btn btn-outline-primary" href="basalam.php">تنظیمات باسلام</a>
+    </div>
   <?php endif; ?>
 </div>
 
@@ -91,6 +97,13 @@ require __DIR__ . '/partials/header.php';
 <?php if ($error): ?>
   <div class="alert alert-danger"><?= e($error) ?></div>
 <?php else: ?>
+  <?php if (Auth::isAdmin()): ?>
+    <div class="alert alert-info small">
+      «تطبیق خودکار» فقط محصولات موجود Woo را به محصولات موجود باسلام مپ می‌کند و <strong>هیچ محصول جدیدی نمی‌سازد</strong>.
+      اول SKU یکتا، سپس عنوان نرمال‌شده بررسی می‌شود؛ موارد مبهم برای بررسی دستی کنار گذاشته می‌شوند.
+    </div>
+  <?php endif; ?>
+
   <div class="card mb-3">
     <div class="card-body">
       <form method="get" class="row g-2 align-items-end">
@@ -103,6 +116,7 @@ require __DIR__ . '/partials/header.php';
           <select name="sync_status" class="form-select">
             <option value="">همه</option>
             <option value="not_synced" <?= $statusFilter === 'not_synced' ? 'selected' : '' ?>>سینک نشده</option>
+            <option value="matched" <?= $statusFilter === 'matched' ? 'selected' : '' ?>>مپ شده</option>
             <option value="synced" <?= $statusFilter === 'synced' ? 'selected' : '' ?>>سینک شده</option>
             <option value="partial" <?= $statusFilter === 'partial' ? 'selected' : '' ?>>نیاز به بررسی</option>
             <option value="error" <?= $statusFilter === 'error' ? 'selected' : '' ?>>خطا</option>
@@ -187,6 +201,7 @@ require __DIR__ . '/partials/header.php';
 <script>
 (function () {
   const notice = document.getElementById('syncNotice');
+  const autoMatchBtn = document.getElementById('autoMatchBtn');
 
   function showNotice(message, ok) {
     notice.innerHTML = '';
@@ -194,6 +209,75 @@ require __DIR__ . '/partials/header.php';
     box.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger');
     box.textContent = message;
     notice.appendChild(box);
+  }
+
+  function showMatchReport(data) {
+    notice.innerHTML = '';
+    const stats = data.stats || {};
+    const box = document.createElement('div');
+    box.className = 'alert alert-success';
+
+    const title = document.createElement('div');
+    title.className = 'fw-semibold mb-2';
+    title.textContent = data.message || 'تطبیق خودکار انجام شد.';
+    box.appendChild(title);
+
+    const summary = document.createElement('div');
+    summary.textContent =
+      'مپ جدید: ' + (stats.matched || 0) +
+      ' | از قبل مپ‌شده: ' + (stats.already_mapped || 0) +
+      ' | نیاز به بررسی: ' + (stats.needs_review || 0) +
+      ' | پیدا نشد: ' + (stats.not_found || 0) +
+      ' | محصولات باسلام خوانده‌شده: ' + (stats.basalam_total || 0);
+    box.appendChild(summary);
+
+    const detail = document.createElement('div');
+    detail.className = 'small mt-2';
+    detail.textContent =
+      'SKU: ' + (stats.matched_by_sku || 0) +
+      ' | عنوان دقیق: ' + (stats.matched_by_title || 0) +
+      ' | عنوان با تفاوت فاصله/نیم‌فاصله: ' + (stats.matched_by_compact_title || 0);
+    box.appendChild(detail);
+
+    if ((data.needs_review || []).length) {
+      const review = document.createElement('details');
+      review.className = 'mt-3';
+      const summaryEl = document.createElement('summary');
+      summaryEl.textContent = 'نمایش موارد نیازمند بررسی';
+      review.appendChild(summaryEl);
+      const list = document.createElement('ul');
+      list.className = 'mt-2 mb-0';
+      data.needs_review.slice(0, 20).forEach(item => {
+        const li = document.createElement('li');
+        const candidates = (item.candidates || []).map(c => '#' + c.id + ' ' + c.name).join('، ');
+        li.textContent = 'Woo #' + item.wc_product_id + ' ' + item.woo_name + ' — ' + item.reason + (candidates ? ' — ' + candidates : '');
+        list.appendChild(li);
+      });
+      review.appendChild(list);
+      box.appendChild(review);
+    }
+
+    notice.appendChild(box);
+  }
+
+  if (autoMatchBtn) {
+    autoMatchBtn.addEventListener('click', async function () {
+      if (!confirm('تطبیق خودکار فقط مپ ذخیره می‌کند و محصول جدیدی در باسلام نمی‌سازد. اجرا شود؟')) return;
+      this.disabled = true;
+      const oldText = this.textContent;
+      this.textContent = 'در حال تطبیق...';
+      try {
+        const response = await fetch('ajax/basalam_auto_match.php', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message || 'تطبیق خودکار ناموفق بود.');
+        showMatchReport(data);
+      } catch (error) {
+        showNotice(error.message || 'تطبیق خودکار ناموفق بود.', false);
+      } finally {
+        this.disabled = false;
+        this.textContent = oldText;
+      }
+    });
   }
 
   document.querySelectorAll('.sync-btn').forEach(button => {
