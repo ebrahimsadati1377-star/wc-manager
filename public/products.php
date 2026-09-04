@@ -17,6 +17,7 @@ $status = trim($_GET['status'] ?? '');
 $type = trim($_GET['type'] ?? '');
 
 $categories = [];
+$basalamMaps = [];
 
 if (!$wc->isConfigured()) {
     $loadError = 'اتصال به ووکامرس تنظیم نشده است.';
@@ -39,6 +40,15 @@ if (!$wc->isConfigured()) {
     $catRes = $wc->getCategories(['per_page' => 100, 'orderby' => 'name', 'order' => 'asc']);
     if (!$catRes['error']) {
         $categories = $catRes['body'];
+    }
+}
+
+if ($products) {
+    try {
+        $basalamSync = new BasalamSync();
+        $basalamMaps = $basalamSync->getProductMaps(array_column($products, 'id'));
+    } catch (Throwable $e) {
+        $basalamMaps = [];
     }
 }
 
@@ -117,6 +127,11 @@ require __DIR__ . '/partials/header.php';
 }
 .products-filter-card { border: 0; box-shadow: 0 .125rem .35rem rgba(0,0,0,.04); }
 .mobile-pagination { display: none; }
+.product-basalam-sync { margin-top: .75rem; }
+.product-basalam-sync .btn { min-height: 44px; width: 100%; }
+.product-basalam-sync-time { margin-top: .35rem; color: #6c757d; font-size: .78rem; text-align: center; }
+.desktop-basalam-sync { margin-top: .5rem; }
+.desktop-basalam-sync-time { margin-top: .25rem; color: #6c757d; font-size: .72rem; }
 
 @media (max-width: 767.98px) {
     .products-heading { align-items: stretch !important; flex-direction: column; }
@@ -208,7 +223,12 @@ require __DIR__ . '/partials/header.php';
       </thead>
       <tbody>
         <?php foreach ($products as $p): ?>
-        <?php [$sLabel, $sColor] = productStatusMeta($p); ?>
+        <?php
+          [$sLabel, $sColor] = productStatusMeta($p);
+          $bMap = $basalamMaps[(int)$p['id']] ?? null;
+          $bMapped = !empty($bMap['basalam_product_id']);
+          $bLastSync = trim((string)($bMap['last_synced_at'] ?? ''));
+        ?>
         <tr>
           <td>
             <?php if (!empty($p['images'][0]['src'])): ?>
@@ -250,6 +270,14 @@ require __DIR__ . '/partials/header.php';
               <a href="<?= e($p['permalink']) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary">مشاهده</a>
             <?php endif; ?>
             <button class="btn btn-sm btn-outline-danger" onclick="deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')">حذف</button>
+            <div class="desktop-basalam-sync">
+              <button type="button" class="btn btn-sm btn-outline-success basalam-update-btn" data-id="<?= (int)$p['id'] ?>" <?= $bMapped ? '' : 'disabled' ?> title="<?= $bMapped ? 'ارسال بروزرسانی به باسلام' : 'این محصول هنوز به باسلام مپ نشده است' ?>">
+                <i class="fas fa-sync-alt ms-1"></i> بروزرسانی باسلام
+              </button>
+              <div class="desktop-basalam-sync-time" data-basalam-last-sync-id="<?= (int)$p['id'] ?>">
+                آخرین بروزرسانی: <?= e($bLastSync !== '' ? $bLastSync : 'انجام نشده') ?>
+              </div>
+            </div>
           </td>
         </tr>
         <?php endforeach; ?>
@@ -274,6 +302,9 @@ require __DIR__ . '/partials/header.php';
           ? (string)($p['stock_quantity'] ?? '-')
           : ($p['stock_status'] === 'instock' ? 'موجود' : 'ناموجود');
       $typeLabel = $p['type'] === 'variable' ? 'متغیر' : 'ساده';
+      $bMap = $basalamMaps[(int)$p['id']] ?? null;
+      $bMapped = !empty($bMap['basalam_product_id']);
+      $bLastSync = trim((string)($bMap['last_synced_at'] ?? ''));
     ?>
     <article class="product-mobile-card">
       <div class="product-mobile-top">
@@ -319,6 +350,15 @@ require __DIR__ . '/partials/header.php';
         <?php endif; ?>
         <button class="btn btn-outline-danger" onclick="deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')"><i class="fas fa-trash"></i> حذف</button>
       </div>
+
+      <div class="product-basalam-sync">
+        <button type="button" class="btn btn-outline-success basalam-update-btn" data-id="<?= (int)$p['id'] ?>" <?= $bMapped ? '' : 'disabled' ?> title="<?= $bMapped ? 'ارسال بروزرسانی به باسلام' : 'این محصول هنوز به باسلام مپ نشده است' ?>">
+          <i class="fas fa-sync-alt"></i> بروزرسانی باسلام
+        </button>
+        <div class="product-basalam-sync-time" data-basalam-last-sync-id="<?= (int)$p['id'] ?>">
+          آخرین بروزرسانی: <?= e($bLastSync !== '' ? $bLastSync : 'انجام نشده') ?>
+        </div>
+      </div>
     </article>
   <?php endforeach; ?>
 </div>
@@ -355,6 +395,43 @@ require __DIR__ . '/partials/header.php';
 <?php endif; ?>
 
 <script>
+document.querySelectorAll('.basalam-update-btn').forEach(button => {
+  button.addEventListener('click', async function () {
+    const id = this.dataset.id;
+    if (!id) return;
+
+    const buttons = document.querySelectorAll('.basalam-update-btn[data-id="' + id + '"]');
+    buttons.forEach(btn => btn.disabled = true);
+    const originalHtml = this.innerHTML;
+    this.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> در حال بروزرسانی...';
+
+    const fd = new FormData();
+    fd.append('id', id);
+    fd.append('force', '1');
+    if (window.CSRF_TOKEN) fd.append('csrf_token', window.CSRF_TOKEN);
+
+    try {
+      const response = await fetch('ajax/basalam_sync_product.php', { method: 'POST', body: fd });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'بروزرسانی باسلام ناموفق بود.');
+
+      document.querySelectorAll('[data-basalam-last-sync-id="' + id + '"]').forEach(el => {
+        el.textContent = 'آخرین بروزرسانی: همین الان';
+      });
+
+      const warningText = Array.isArray(data.warnings) && data.warnings.length
+        ? '\n\nهشدار: ' + data.warnings.join(' | ')
+        : '';
+      alert((data.message || 'بروزرسانی باسلام انجام شد.') + warningText);
+    } catch (error) {
+      alert(error.message || 'بروزرسانی باسلام ناموفق بود.');
+    } finally {
+      this.innerHTML = originalHtml;
+      buttons.forEach(btn => btn.disabled = false);
+    }
+  });
+});
+
 function deleteProduct(id, name) {
   if (!confirm('آیا از حذف محصول «' + name + '» مطمئن هستید؟ این عملیات غیرقابل بازگشت است.')) return;
   const fd = new FormData();
