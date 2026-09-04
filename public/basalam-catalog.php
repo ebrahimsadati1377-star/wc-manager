@@ -6,6 +6,7 @@ $basalam = new BasalamClient();
 
 $search = trim((string)($_GET['s'] ?? ''));
 $marketFilter = trim((string)($_GET['market_status'] ?? ''));
+$relationFilter = trim((string)($_GET['relation'] ?? ''));
 $products = [];
 $error = null;
 
@@ -63,6 +64,21 @@ function basalamCatalogPhoto(array $product): string
     return (string)($photo['sm'] ?? $photo['xs'] ?? $photo['md'] ?? '');
 }
 
+function basalamCatalogNormalizeTitle(string $title): string
+{
+    $title = html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $title = str_replace(["\u{200c}", "\u{200d}", "\u{200e}", "\u{200f}", 'ي', 'ى', 'ك', 'ة', 'ۀ'], ['', '', '', '', 'ی', 'ی', 'ک', 'ه', 'ه'], $title);
+    $title = function_exists('mb_strtolower') ? mb_strtolower($title, 'UTF-8') : strtolower($title);
+    $title = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $title) ?? $title;
+    return preg_replace('/\s+/u', ' ', trim($title)) ?? trim($title);
+}
+
+function basalamCatalogNormalizeSku(mixed $sku): string
+{
+    $sku = trim((string)$sku);
+    return function_exists('mb_strtolower') ? mb_strtolower($sku, 'UTF-8') : strtolower($sku);
+}
+
 if (!$basalam->isConfigured()) {
     $error = 'اتصال باسلام تنظیم نشده است.';
 } else {
@@ -102,6 +118,69 @@ try {
     error_log('[wc-manager] basalam catalog mapping lookup failed: ' . $e->getMessage());
 }
 
+$wooSkuIndex = [];
+$wooTitleIndex = [];
+try {
+    $wc = new WooCommerceClient();
+    if ($wc->isConfigured()) {
+        for ($wooPage = 1; $wooPage <= 50; $wooPage++) {
+            $wooRes = $wc->getProducts(['page'=>$wooPage,'per_page'=>100,'orderby'=>'id','order'=>'asc']);
+            if ($wooRes['error']) break;
+            $wooBatch = is_array($wooRes['body'] ?? null) ? $wooRes['body'] : [];
+            foreach ($wooBatch as $wooProduct) {
+                if (!is_array($wooProduct)) continue;
+                if (!in_array((string)($wooProduct['type'] ?? ''), ['simple','variable'], true)) continue;
+                $wooId = (int)($wooProduct['id'] ?? 0);
+                if ($wooId <= 0) continue;
+                $sku = basalamCatalogNormalizeSku($wooProduct['sku'] ?? '');
+                if ($sku !== '') $wooSkuIndex[$sku][] = $wooId;
+                $title = basalamCatalogNormalizeTitle((string)($wooProduct['name'] ?? ''));
+                if ($title !== '') $wooTitleIndex[$title][] = $wooId;
+            }
+            $wooTotalPages = max(1, (int)($wooRes['headers']['total_pages'] ?? 1));
+            if ($wooPage >= $wooTotalPages || count($wooBatch) < 100) break;
+        }
+    }
+} catch (Throwable $e) {
+    error_log('[wc-manager] basalam catalog Woo relation lookup failed: ' . $e->getMessage());
+}
+
+$relationStats = ['linked'=>0,'candidate'=>0,'basalam_only'=>0,'unlinked'=>0];
+foreach ($products as &$product) {
+    $id = (int)($product['id'] ?? 0);
+    $linkedWoo = (int)($wooByBasalam[$id] ?? 0);
+    if ($linkedWoo > 0) {
+        $product['_relation'] = ['key'=>'linked','label'=>'متصل به سایت','woo_id'=>$linkedWoo,'method'=>'map'];
+        $relationStats['linked']++;
+        continue;
+    }
+
+    $candidateWoo = 0;
+    $method = '';
+    $sku = basalamCatalogNormalizeSku($product['sku'] ?? '');
+    if ($sku !== '' && count($wooSkuIndex[$sku] ?? []) === 1) {
+        $candidateWoo = (int)$wooSkuIndex[$sku][0];
+        $method = 'SKU';
+    }
+    if ($candidateWoo <= 0) {
+        $title = basalamCatalogNormalizeTitle((string)($product['name'] ?? $product['title'] ?? ''));
+        if ($title !== '' && count($wooTitleIndex[$title] ?? []) === 1) {
+            $candidateWoo = (int)$wooTitleIndex[$title][0];
+            $method = 'عنوان دقیق';
+        }
+    }
+
+    if ($candidateWoo > 0) {
+        $product['_relation'] = ['key'=>'candidate','label'=>'در سایت هست؛ ادغام نشده','woo_id'=>$candidateWoo,'method'=>$method];
+        $relationStats['candidate']++;
+    } else {
+        $product['_relation'] = ['key'=>'basalam_only','label'=>'فقط در باسلام / معادل مطمئن پیدا نشد','woo_id'=>0,'method'=>''];
+        $relationStats['basalam_only']++;
+    }
+    $relationStats['unlinked']++;
+}
+unset($product);
+
 $stats = ['all'=>count($products),'available'=>0,'pending'=>0,'rejected'=>0,'unpublished'=>0,'inactive'=>0,'unknown'=>0];
 foreach ($products as $product) {
     $key = (string)($product['_market']['key'] ?? 'unknown');
@@ -109,16 +188,21 @@ foreach ($products as $product) {
     $stats[$key]++;
 }
 
-if ($search !== '' || $marketFilter !== '') {
-    $products = array_values(array_filter($products, function (array $product) use ($search, $marketFilter) {
+if ($search !== '' || $marketFilter !== '' || $relationFilter !== '') {
+    $products = array_values(array_filter($products, function (array $product) use ($search, $marketFilter, $relationFilter) {
         $market = $product['_market'] ?? [];
+        $relation = $product['_relation'] ?? [];
         if ($marketFilter !== '' && ($market['key'] ?? '') !== $marketFilter) return false;
+        if ($relationFilter === 'unlinked' && ($relation['key'] ?? '') === 'linked') return false;
+        if ($relationFilter !== '' && $relationFilter !== 'unlinked' && ($relation['key'] ?? '') !== $relationFilter) return false;
         if ($search === '') return true;
         $haystack = implode(' ', [
             (string)($product['id'] ?? ''),
             (string)($product['name'] ?? $product['title'] ?? ''),
             (string)($product['sku'] ?? ''),
             (string)($market['label'] ?? ''),
+            (string)($relation['label'] ?? ''),
+            (string)($relation['woo_id'] ?? ''),
         ]);
         return basalamCatalogContains($haystack, $search);
     }));
@@ -180,14 +264,20 @@ require __DIR__ . '/partials/header.php';
     <div class="col-6 col-md-2"><a class="text-decoration-none" href="basalam-catalog.php"><div class="card h-100"><div class="card-body py-3"><div class="text-muted small">کل کاتالوگ</div><div class="fs-4 fw-bold"><?= (int)$stats['all'] ?></div></div></div></a></div>
   </div>
 
+  <div class="row g-2 mb-3">
+    <div class="col-12 col-md-4"><a class="text-decoration-none" href="?relation=linked"><div class="card h-100 border-success-subtle"><div class="card-body py-3"><div class="text-muted small">متصل به سایت</div><div class="fs-4 fw-bold text-success"><?= (int)$relationStats['linked'] ?></div><div class="small text-muted">مپ Woo ↔ باسلام دارد</div></div></div></a></div>
+    <div class="col-12 col-md-4"><a class="text-decoration-none" href="?relation=candidate"><div class="card h-100 border-warning-subtle"><div class="card-body py-3"><div class="text-muted small">در سایت هست؛ ادغام نشده</div><div class="fs-4 fw-bold text-warning"><?= (int)$relationStats['candidate'] ?></div><div class="small text-muted">تطبیق قطعی SKU یا عنوان پیدا شد</div></div></div></a></div>
+    <div class="col-12 col-md-4"><a class="text-decoration-none" href="?relation=basalam_only"><div class="card h-100 border-danger-subtle"><div class="card-body py-3"><div class="text-muted small">فقط در باسلام</div><div class="fs-4 fw-bold text-danger"><?= (int)$relationStats['basalam_only'] ?></div><div class="small text-muted">در سایت معادل مطمئن پیدا نشد</div></div></div></a></div>
+  </div>
+
   <div class="card mb-3">
     <div class="card-body">
       <form method="get" class="row g-2 align-items-end">
-        <div class="col-12 col-md-6">
+        <div class="col-12 col-md-4">
           <label class="form-label small">جستجو</label>
           <input type="search" name="s" class="form-control" value="<?= e($search) ?>" placeholder="نام محصول، SKU یا شناسه باسلام...">
         </div>
-        <div class="col-8 col-md-4">
+        <div class="col-6 col-md-3">
           <label class="form-label small">وضعیت در باسلام</label>
           <select name="market_status" class="form-select">
             <option value="">همه وضعیت‌ها</option>
@@ -199,14 +289,24 @@ require __DIR__ . '/partials/header.php';
             <option value="unknown" <?= $marketFilter === 'unknown' ? 'selected' : '' ?>>نامشخص</option>
           </select>
         </div>
-        <div class="col-4 col-md-2 d-grid"><button class="btn btn-primary">فیلتر</button></div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small">ارتباط با سایت</label>
+          <select name="relation" class="form-select">
+            <option value="">همه ارتباط‌ها</option>
+            <option value="linked" <?= $relationFilter === 'linked' ? 'selected' : '' ?>>متصل به سایت</option>
+            <option value="unlinked" <?= $relationFilter === 'unlinked' ? 'selected' : '' ?>>همه بدون اتصال</option>
+            <option value="candidate" <?= $relationFilter === 'candidate' ? 'selected' : '' ?>>در سایت هست؛ ادغام نشده</option>
+            <option value="basalam_only" <?= $relationFilter === 'basalam_only' ? 'selected' : '' ?>>فقط در باسلام</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-2 d-grid"><button class="btn btn-primary">فیلتر</button></div>
       </form>
     </div>
   </div>
 
   <div class="d-flex justify-content-between align-items-center mb-2">
     <div class="small text-muted"><?= count($products) ?> محصول نمایش داده می‌شود</div>
-    <?php if ($search !== '' || $marketFilter !== ''): ?><a class="small" href="basalam-catalog.php">پاک کردن فیلترها</a><?php endif; ?>
+    <?php if ($search !== '' || $marketFilter !== '' || $relationFilter !== ''): ?><a class="small" href="basalam-catalog.php">پاک کردن فیلترها</a><?php endif; ?>
   </div>
 
   <div class="card catalog-table-card">
@@ -228,6 +328,7 @@ require __DIR__ . '/partials/header.php';
             $showable = $market['showable'] ?? null;
             $available = $market['available'] ?? null;
             $wcId = (int)($wooByBasalam[$id] ?? 0);
+            $relation = $product['_relation'] ?? ['key'=>'basalam_only','label'=>'فقط در باسلام','woo_id'=>0,'method'=>''];
             $photo = basalamCatalogPhoto($product);
             $needsDetail = ($market['key'] ?? '') !== 'available';
           ?>
@@ -250,7 +351,19 @@ require __DIR__ . '/partials/header.php';
             </td>
             <td data-label="قابل نمایش"><?php if ($showable === null): ?><span class="text-muted">-</span><?php elseif ($showable): ?><span class="badge text-bg-success">بله</span><?php else: ?><span class="badge text-bg-secondary">خیر</span><?php endif; ?></td>
             <td data-label="قابل خرید"><?php if ($available === null): ?><span class="text-muted">-</span><?php elseif ($available): ?><span class="badge text-bg-success">بله</span><?php else: ?><span class="badge text-bg-secondary">خیر</span><?php endif; ?></td>
-            <td data-label="Woo"><?php if ($wcId > 0): ?><span class="badge text-bg-info">Woo #<?= $wcId ?></span><?php else: ?><span class="text-muted small">مپ نشده</span><?php endif; ?></td>
+            <td data-label="ارتباط با سایت">
+              <?php if (($relation['key'] ?? '') === 'linked'): ?>
+                <span class="badge text-bg-info">Woo #<?= (int)$relation['woo_id'] ?></span>
+                <div class="small text-success mt-1">متصل به سایت</div>
+              <?php elseif (($relation['key'] ?? '') === 'candidate'): ?>
+                <span class="badge text-bg-warning">Woo #<?= (int)$relation['woo_id'] ?> احتمالی</span>
+                <div class="small text-warning-emphasis mt-1">در سایت هست؛ ادغام نشده</div>
+                <div class="small text-muted">تطبیق: <?= e((string)($relation['method'] ?? '')) ?></div>
+              <?php else: ?>
+                <span class="badge text-bg-danger">فقط باسلام</span>
+                <div class="small text-muted mt-1">معادل مطمئن در Woo پیدا نشد</div>
+              <?php endif; ?>
+            </td>
             <td class="catalog-detail-cell" data-label="دلیل">
               <?php if ($needsDetail): ?>
                 <button type="button" class="btn btn-sm btn-outline-warning moderation-detail-btn" data-id="<?= $id ?>">نمایش دلیل</button>
