@@ -1,0 +1,165 @@
+name: Migrate Basalam wrong-category products 1862 1857
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/migrate-basalam-wrong-category-1862-1857.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Create replacements, remap, and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+          $db = Database::get();
+
+          $cases = [
+              1862 => 57616717,
+              1857 => 57616712,
+          ];
+          $expectedCategory = 239; // شلوار و سرهمی زنانه
+          $oldCategory = 222;      // شلوار و سرهمی دخترانه
+          $failed = false;
+
+          foreach ($cases as $wooId => $oldBasalamId) {
+              echo "=== WOO {$wooId} ===\n";
+              $wooRes = $wc->getProduct($wooId);
+              if ($wooRes['error']) {
+                  echo "ERROR woo read: {$wooRes['error']}\n";
+                  $failed = true;
+                  continue;
+              }
+              $woo = (array)$wooRes['body'];
+              $wooName = trim((string)($woo['name'] ?? ''));
+
+              $map = $sync->getProductMap($wooId);
+              $mappedId = (int)($map['basalam_product_id'] ?? 0);
+              if ($mappedId !== $oldBasalamId) {
+                  echo "ERROR unexpected mapping: expected {$oldBasalamId}, got {$mappedId}\n";
+                  $failed = true;
+                  continue;
+              }
+
+              $oldRes = $client->getProduct($oldBasalamId, true);
+              if ($oldRes['error']) {
+                  echo "ERROR old Basalam read: {$oldRes['error']}\n";
+                  $failed = true;
+                  continue;
+              }
+              $oldBody = (array)$oldRes['body'];
+              $actualOldCategory = (int)($oldBody['category']['id'] ?? $oldBody['category_id'] ?? 0);
+              if ($actualOldCategory !== $oldCategory) {
+                  echo "ERROR old category changed unexpectedly: {$actualOldCategory}\n";
+                  $failed = true;
+                  continue;
+              }
+
+              // Basalam blocks duplicate product names. Keep the old product intact but
+              // move its title out of the way so a replacement can use the Woo title.
+              $archiveName = $wooName . ' - آرشیو دسته قدیمی ' . $oldBasalamId;
+              $renameRes = $client->updateProduct($oldBasalamId, ['name' => $archiveName]);
+              if ($renameRes['error']) {
+                  echo "ERROR archive rename: {$renameRes['error']}\n";
+                  $failed = true;
+                  continue;
+              }
+              echo "OLD_RENAMED={$oldBasalamId}\n";
+
+              // Clear only the WC Manager mapping so syncProduct takes the safe create
+              // path with the already-configured Woo -> Basalam category #239 mapping.
+              $stmt = $db->prepare(
+                  "UPDATE basalam_product_map
+                   SET basalam_product_id = NULL, last_wc_hash = NULL,
+                       sync_status = 'pending', sync_error = NULL, last_synced_at = NULL
+                   WHERE wc_product_id = :wc"
+              );
+              $stmt->execute(['wc' => $wooId]);
+
+              $result = $sync->syncProduct($wooId, true);
+              echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+              if (empty($result['success'])) {
+                  // Roll back the local mapping and old title if replacement creation fails.
+                  $restore = $db->prepare(
+                      "UPDATE basalam_product_map
+                       SET basalam_product_id = :old_id, last_wc_hash = NULL,
+                           sync_status = 'partial', sync_error = :error, last_synced_at = NOW()
+                       WHERE wc_product_id = :wc"
+                  );
+                  $restore->execute([
+                      'old_id' => $oldBasalamId,
+                      'error' => 'Replacement create failed; mapping restored to old Basalam product.',
+                      'wc' => $wooId,
+                  ]);
+                  $client->updateProduct($oldBasalamId, ['name' => $wooName]);
+                  $failed = true;
+                  continue;
+              }
+
+              $newId = (int)($result['basalam_product_id'] ?? 0);
+              if ($newId <= 0 || $newId === $oldBasalamId) {
+                  echo "ERROR invalid replacement id: {$newId}\n";
+                  $failed = true;
+                  continue;
+              }
+
+              $newRes = $client->getProduct($newId, true);
+              if ($newRes['error']) {
+                  echo "ERROR replacement read: {$newRes['error']}\n";
+                  $failed = true;
+                  continue;
+              }
+              $newBody = (array)$newRes['body'];
+              $newCategory = (int)($newBody['category']['id'] ?? $newBody['category_id'] ?? 0);
+              $finalMap = $sync->getProductMap($wooId);
+              $finalMappedId = (int)($finalMap['basalam_product_id'] ?? 0);
+
+              echo "OLD={$oldBasalamId}\n";
+              echo "NEW={$newId}\n";
+              echo "NEW_CATEGORY={$newCategory}\n";
+              echo "FINAL_MAP={$finalMappedId}\n";
+              echo 'FINAL_STATUS=' . (string)($finalMap['sync_status'] ?? '') . PHP_EOL;
+              echo 'WARNINGS=' . json_encode($result['warnings'] ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+              if ($newCategory !== $expectedCategory || $finalMappedId !== $newId) {
+                  echo "ERROR verification failed\n";
+                  $failed = true;
+              }
+          }
+
+          if ($failed) {
+              exit(1);
+          }
+          PHP
