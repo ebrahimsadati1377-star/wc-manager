@@ -1,0 +1,64 @@
+name: Run Basalam safe image pilot
+on:
+  push:
+    branches: [ops/basalam-safe-image-pilot]
+    paths:
+      - '.github/workflows/run-basalam-safe-image-pilot.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run safe-image pilot for Woo 1083
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/wc-safe-pilot.php <<'PHP'
+          <?php
+          $root = rtrim((string)($argv[1] ?? ''), '/');
+          require $root . '/includes/bootstrap.php';
+          $service = new BasalamSafeImageService();
+          $result = $service->prepareAndSubmit(1083, 28);
+          $out = [
+              'success' => (bool)($result['success'] ?? false),
+              'message' => (string)($result['message'] ?? ''),
+              'wc_product_id' => (int)($result['wc_product_id'] ?? 0),
+              'basalam_product_id' => (int)($result['basalam_product_id'] ?? 0),
+              'image_count' => (int)($result['image_count'] ?? 0),
+              'warnings' => (array)($result['warnings'] ?? []),
+              'before_status' => $result['moderation_before']['status'] ?? null,
+              'after_status' => $result['moderation_after']['status'] ?? null,
+              'after_showable' => $result['moderation_after']['is_showable'] ?? null,
+              'after_available' => $result['moderation_after']['is_available'] ?? null,
+          ];
+          if (!empty($result['basalam_product_id'])) {
+              $client = new BasalamClient();
+              $p = $client->getProduct((int)$result['basalam_product_id'], true);
+              $body = is_array($p['body'] ?? null) ? $p['body'] : [];
+              $photo = is_array($body['photo'] ?? null) ? $body['photo'] : [];
+              $out['primary_photo_url'] = (string)($photo['lg'] ?? $photo['md'] ?? $photo['sm'] ?? $photo['original'] ?? '');
+          }
+          echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (empty($out['success'])) exit(2);
+          PHP
+          scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/wc-safe-pilot.php "$DEPLOY_USER@$DEPLOY_HOST:/tmp/wc-safe-pilot.php"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "php /tmp/wc-safe-pilot.php '$DEPLOY_PATH'; rc=\$?; rm -f /tmp/wc-safe-pilot.php; exit \$rc"
