@@ -1,4 +1,4 @@
-name: Diagnose Basalam Woo 1879
+name: Verify Basalam Woo 1879
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Reproduce update and print Basalam validation body
+      - name: Sync mapped Woo product and verify Basalam product
         shell: bash
         run: |
           set -euo pipefail
@@ -40,35 +40,19 @@ jobs:
           ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
           <?php
           require_once 'includes/bootstrap.php';
-          $wc = new WooCommerceClient();
+          $sync = new BasalamSync();
+          $result = $sync->syncProduct(1879, false);
+          echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (empty($result['success'])) exit(1);
           $client = new BasalamClient();
-          $sync = new BasalamSync($wc, $client);
-          $pRes = $wc->getProduct(1879);
-          if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit(1); }
-          $p = $pRes['body'];
-          $map = $sync->getProductMap(1879);
-          echo 'MAP=' . json_encode($map, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
-          $rm->setAccessible(true);
-          $cat = $rm->invoke($sync, $p);
-          echo 'CATEGORY=' . json_encode($cat, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          $bm = new ReflectionMethod(BasalamSync::class, 'buildProductPayload');
-          $bm->setAccessible(true);
-          $payload = $bm->invoke($sync, $p, [], (int)$cat['basalam_category_id'], false);
-          if (getSetting('basalam_sync_attributes', '1') !== '0') {
-              $mapper = new BasalamAttributeMapper($client);
-              $ar = $mapper->build($p, [], (int)$cat['basalam_category_id'], 57504488);
-              if (!empty($ar['attributes'])) $payload['product_attribute'] = array_values($ar['attributes']);
-              echo 'ATTR_WARN=' . json_encode($ar['warnings'] ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          }
-          echo 'WOO=' . json_encode([
-            'id'=>1879,'name'=>$p['name']??null,'sku'=>$p['sku']??null,
-            'price'=>$p['price']??null,'stock_quantity'=>$p['stock_quantity']??null,
-            'weight'=>$p['weight']??null,'type'=>$p['type']??null
+          $read = $client->getProduct(57504488, true);
+          echo 'READ_ERROR=' . ($read['error'] ?? '') . PHP_EOL;
+          echo 'PRODUCT=' . json_encode([
+            'id'=>$read['body']['id'] ?? null,
+            'name'=>$read['body']['name'] ?? null,
+            'primary_price'=>$read['body']['primary_price'] ?? null,
+            'stock'=>$read['body']['stock'] ?? null,
+            'category_id'=>$read['body']['category']['id'] ?? ($read['body']['category_id'] ?? null),
+            'status'=>$read['body']['status'] ?? null
           ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          echo 'PAYLOAD=' . json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          $res = $client->updateProduct(57504488, $payload);
-          echo 'STATUS=' . ($res['status'] ?? 0) . PHP_EOL;
-          echo 'ERROR=' . ($res['error'] ?? '') . PHP_EOL;
-          echo 'BODY=' . json_encode($res['body'] ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
           PHP
