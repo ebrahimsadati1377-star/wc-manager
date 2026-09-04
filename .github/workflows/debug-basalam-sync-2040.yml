@@ -50,3 +50,4 @@ jobs:
           ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php tools/basalam-debug-sync-2040.php"
 
 # verify-after-weight-fallback-fix
+# verify-strict-package-weight
