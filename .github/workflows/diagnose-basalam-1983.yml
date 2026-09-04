@@ -1,4 +1,4 @@
-name: Repair Basalam Woo 1983
+name: Map Existing Basalam Woo 1983
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
 jobs:
-  repair:
+  map:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Create base product then complete sync
+      - name: Find exact existing product, map, sync
         shell: bash
         run: |
           set -euo pipefail
@@ -43,33 +43,47 @@ jobs:
           $wc = new WooCommerceClient();
           $client = new BasalamClient();
           $sync = new BasalamSync($wc, $client);
-          $existing = $sync->getProductMap(1983);
-          if ((int)($existing['basalam_product_id'] ?? 0) > 0) {
-              echo 'ALREADY_MAPPED=' . (int)$existing['basalam_product_id'] . PHP_EOL;
-              echo 'SYNC=' . json_encode($sync->syncProduct(1983, true), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              exit;
-          }
           $pRes = $wc->getProduct(1983);
           if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit(1); }
           $p = $pRes['body'];
-          $vars = [];
+          $target = trim((string)($p['name'] ?? ''));
+          $norm = static function(string $s): string {
+              $s = str_replace(['ي','ك'], ['ی','ک'], $s);
+              $s = preg_replace('/\s+/u', ' ', trim($s)) ?? trim($s);
+              return mb_strtolower($s, 'UTF-8');
+          };
+          $matches = [];
+          for ($page=1; $page<=20; $page++) {
+              $res = $client->getVendorProducts(['page'=>$page,'per_page'=>100]);
+              if ($res['error']) { echo 'LIST_ERROR=' . $res['error'] . PHP_EOL; exit(1); }
+              $body = $res['body'] ?? [];
+              $items = $body['data'] ?? $body['products'] ?? $body;
+              if (!is_array($items) || !$items) break;
+              $count = 0;
+              foreach ($items as $item) {
+                  if (!is_array($item)) continue;
+                  $count++;
+                  $name = trim((string)($item['name'] ?? $item['title'] ?? ''));
+                  if ($name !== '' && $norm($name) === $norm($target)) {
+                      $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name];
+                  }
+              }
+              if ($count < 100) break;
+          }
+          echo 'TARGET=' . $target . PHP_EOL;
+          echo 'MATCHES=' . json_encode($matches, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          $matches = array_values(array_filter($matches, fn($m)=>(int)$m['id']>0));
+          if (count($matches) !== 1) { echo 'UNSAFE_MATCH_COUNT=' . count($matches) . PHP_EOL; exit(1); }
+          $id = (int)$matches[0]['id'];
           $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory'); $rm->setAccessible(true);
           $cat = $rm->invoke($sync, $p);
           if (!$cat) { echo 'NO_CATEGORY_MAP' . PHP_EOL; exit(1); }
-          $bm = new ReflectionMethod(BasalamSync::class, 'buildProductPayload'); $bm->setAccessible(true);
-          $payload = $bm->invoke($sync, $p, $vars, (int)$cat['basalam_category_id'], true);
-          unset($payload['product_attribute'], $payload['photo'], $payload['photos']);
-          $res = $client->createProduct($payload);
-          echo 'CREATE_STATUS=' . ($res['status'] ?? 0) . PHP_EOL;
-          echo 'CREATE_ERROR=' . ($res['error'] ?? '') . PHP_EOL;
-          echo 'CREATE_BODY=' . json_encode($res['body'] ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          if ($res['error']) exit(1);
-          $id = (int)($res['body']['id'] ?? 0);
-          if ($id <= 0) { echo 'NO_ID' . PHP_EOL; exit(1); }
           $hm = new ReflectionMethod(BasalamSync::class, 'computeWooHash'); $hm->setAccessible(true);
-          $hash = $hm->invoke($sync, $p, $vars, $cat);
+          $hash = $hm->invoke($sync, $p, [], $cat);
           $sm = new ReflectionMethod(BasalamSync::class, 'saveProductMap'); $sm->setAccessible(true);
           $sm->invoke($sync, 1983, $id, $hash, 'synced', null);
           echo 'MAPPED=' . $id . PHP_EOL;
-          echo 'SYNC=' . json_encode($sync->syncProduct(1983, true), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          $result = $sync->syncProduct(1983, true);
+          echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (empty($result['success'])) exit(1);
           PHP
