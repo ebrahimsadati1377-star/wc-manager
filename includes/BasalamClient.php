@@ -78,6 +78,10 @@ class BasalamClient
 
     public function updateProduct(int $productId, array $data): array
     {
+        // Basalam does not allow changing category_id after a product is created.
+        // Existing Woo→Basalam mappings may use a newer Woo category mapping, so
+        // never send category_id on PATCH; creation still sends it normally.
+        unset($data['category_id']);
         return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
     }
 
@@ -398,6 +402,27 @@ class BasalamClient
         foreach (['message', 'error_description', 'error', 'detail'] as $key) {
             if (!empty($body[$key]) && is_string($body[$key])) {
                 return $body[$key];
+            }
+        }
+
+        if (!empty($body['messages']) && is_array($body['messages'])) {
+            $messages = [];
+            foreach ($body['messages'] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $message = trim((string)($item['message'] ?? ''));
+                if ($message === '') {
+                    continue;
+                }
+                $fields = array_values(array_filter(array_map(
+                    static fn($field) => trim((string)$field),
+                    (array)($item['fields'] ?? [])
+                )));
+                $messages[] = $fields ? implode(', ', $fields) . ': ' . $message : $message;
+            }
+            if ($messages) {
+                return implode(' | ', $messages);
             }
         }
 
