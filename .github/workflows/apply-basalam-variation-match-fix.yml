@@ -1,0 +1,183 @@
+name: Apply Basalam variation matching fix
+
+on:
+  push:
+    branches: [codex/basalam-existing-variation-match]
+    paths:
+      - '.github/workflows/apply-basalam-variation-match-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/basalam-existing-variation-match
+      - name: Patch variation matching
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('includes/BasalamSync.php')
+          s = p.read_text()
+
+          old = '''        $existingMaps = $this->getVariationMapsByProduct($wcProductId);
+        $used = [];
+
+        foreach ($wooVariations as $wooVariation) {
+'''
+          new = '''        $existingMaps = $this->getVariationMapsByProduct($wcProductId);
+        $used = [];
+
+        // Reserve Basalam variants that are already mapped so a new/unmapped Woo
+        // variation can never be attached to an existing mapping by mistake.
+        foreach ($existingMaps as $existingMap) {
+            $mappedVariationId = (int)($existingMap['basalam_variation_id'] ?? 0);
+            if ($mappedVariationId <= 0) {
+                continue;
+            }
+            foreach ($basalamVariants as $index => $variant) {
+                if ((int)($variant['id'] ?? 0) === $mappedVariationId) {
+                    $used[$index] = true;
+                    break;
+                }
+            }
+        }
+
+        // A duplicated Woo variation SKU is not a safe identifier and should not
+        // be pushed to every Basalam variation.
+        $skuCounts = [];
+        foreach ($wooVariations as $variation) {
+            $variationSku = trim((string)($variation['sku'] ?? ''));
+            if ($variationSku !== '') {
+                $skuCounts[$variationSku] = ($skuCounts[$variationSku] ?? 0) + 1;
+            }
+        }
+
+        foreach ($wooVariations as $wooVariation) {
+'''
+          if old not in s:
+              raise SystemExit('syncExistingVariations header target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            $sku = trim((string)($wooVariation['sku'] ?? ''));
+            if ($sku !== '') {
+                $update['sku'] = $sku;
+            }
+'''
+          new = '''            $sku = trim((string)($wooVariation['sku'] ?? ''));
+            if ($sku !== '' && ($skuCounts[$sku] ?? 0) === 1) {
+                $update['sku'] = $sku;
+            }
+'''
+          if old not in s:
+              raise SystemExit('variation sku target not found')
+          s = s.replace(old, new, 1)
+
+          start = s.index('    private function findVariantMatchIndex(')
+          end = s.index('    private function wooVariationSignature(', start)
+          replacement = '''    private function findVariantMatchIndex(array $wooVariation, array $basalamVariants, array $used): ?int
+    {
+        // Attribute/property signatures are more specific than SKU and must be
+        // preferred. Existing catalogs often reuse a parent SKU across colors.
+        $wooSignature = $this->wooVariationSignature($wooVariation);
+        if ($wooSignature !== '') {
+            $signatureMatches = [];
+            foreach ($basalamVariants as $index => $variant) {
+                if (!empty($used[$index])) {
+                    continue;
+                }
+                if ($wooSignature === $this->basalamVariationSignature((array)$variant)) {
+                    $signatureMatches[] = (int)$index;
+                }
+            }
+            if (count($signatureMatches) === 1) {
+                return $signatureMatches[0];
+            }
+        }
+
+        $wooSku = trim((string)($wooVariation['sku'] ?? ''));
+        if ($wooSku !== '') {
+            $skuMatches = [];
+            foreach ($basalamVariants as $index => $variant) {
+                if (!empty($used[$index])) {
+                    continue;
+                }
+                if ($wooSku === trim((string)($variant['sku'] ?? ''))) {
+                    $skuMatches[] = (int)$index;
+                }
+            }
+            if (count($skuMatches) === 1) {
+                return $skuMatches[0];
+            }
+        }
+
+        // Some legacy Woo products have one variation with no attributes, while
+        // the already-existing Basalam product also has one blank-property
+        // variation. A unique blank-to-blank match is deterministic and safe.
+        if ($wooSignature === '') {
+            $blankMatches = [];
+            foreach ($basalamVariants as $index => $variant) {
+                if (!empty($used[$index])) {
+                    continue;
+                }
+                if ($this->basalamVariationSignature((array)$variant) === '') {
+                    $blankMatches[] = (int)$index;
+                }
+            }
+            if (count($blankMatches) === 1) {
+                return $blankMatches[0];
+            }
+        }
+
+        return null;
+    }
+
+'''
+          s = s[:start] + replacement + s[end:]
+
+          start = s.index('    private function basalamVariationSignature(')
+          end = s.index('    private function saveProductMap(', start)
+          replacement = '''    private function basalamVariationSignature(array $variation): string
+    {
+        $parts = [];
+        foreach (($variation['properties'] ?? []) as $property) {
+            $rawName = $property['property'] ?? '';
+            if (is_array($rawName)) {
+                $rawName = $rawName['title'] ?? $rawName['name'] ?? $rawName['value'] ?? '';
+            }
+
+            $rawValue = $property['value'] ?? '';
+            if (is_array($rawValue)) {
+                $rawValue = $rawValue['value'] ?? $rawValue['title'] ?? $rawValue['name'] ?? '';
+            }
+
+            $name = $this->normalizeText((string)$rawName);
+            $value = $this->normalizeText((string)$rawValue);
+            if ($name !== '' && $value !== '') {
+                $parts[] = $name . '=' . $value;
+            }
+        }
+        sort($parts, SORT_STRING);
+        return implode('|', $parts);
+    }
+
+'''
+          s = s[:start] + replacement + s[end:]
+          p.write_text(s)
+          PY
+          php -l includes/BasalamSync.php
+      - name: Commit source fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-basalam-variation-match-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/BasalamSync.php .github/workflows/apply-basalam-variation-match-fix.yml
+          git commit -m "Fix matching existing Basalam variations"
+          git push origin HEAD:codex/basalam-existing-variation-match
