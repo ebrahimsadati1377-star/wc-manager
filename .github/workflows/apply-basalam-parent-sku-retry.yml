@@ -1,10 +1,9 @@
-name: Apply Basalam parent SKU retry fix
+name: Patch Basalam parent SKU retry
 
 on:
   push:
-    branches: [codex/basalam-parent-sku-retry]
-    paths:
-      - '.github/workflows/apply-basalam-parent-sku-retry.yml'
+    branches:
+      - codex/basalam-parent-sku-retry
 
 permissions:
   contents: write
@@ -16,15 +15,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: codex/basalam-parent-sku-retry
-      - name: Patch parent update SKU conflict fallback
-        shell: bash
+      - name: Patch source
         run: |
-          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           p = Path('includes/BasalamSync.php')
           s = p.read_text()
-          old = '''        if ($creating) {
+          old = """        if ($creating) {
             $basalamRes = $this->basalam->createProduct($payload);
         } else {
             $basalamProductId = (int)$map['basalam_product_id'];
@@ -32,8 +29,8 @@ jobs:
             unset($parentPayload['variants']);
             $basalamRes = $this->basalam->updateProduct($basalamProductId, $parentPayload);
         }
-'''
-          new = '''        if ($creating) {
+"""
+          new = """        if ($creating) {
             $basalamRes = $this->basalam->createProduct($payload);
         } else {
             $basalamProductId = (int)$map['basalam_product_id'];
@@ -41,10 +38,9 @@ jobs:
             unset($parentPayload['variants']);
             $basalamRes = $this->basalam->updateProduct($basalamProductId, $parentPayload);
 
-            // Legacy Basalam catalogs can contain an inactive duplicate that still
-            // owns the Woo SKU. The permanent Woo<->Basalam ID mapping is already
-            // authoritative, so a duplicate SKU must not block all other updates.
-            // Retry once without SKU and record the conflict in the activity log.
+            // A legacy inactive Basalam product can still own the Woo SKU. The
+            // permanent Woo/Basalam ID mapping is authoritative, so retry the
+            // parent update without SKU instead of blocking price/stock/content.
             if (
                 $basalamRes['error']
                 && isset($parentPayload['sku'])
@@ -69,16 +65,14 @@ jobs:
                 }
             }
         }
-'''
+"""
           if old not in s:
-              raise SystemExit('target update block not found')
+              raise SystemExit('target block not found')
           p.write_text(s.replace(old, new, 1))
           PY
           php -l includes/BasalamSync.php
-      - name: Commit source fix
-        shell: bash
+      - name: Commit source
         run: |
-          set -euo pipefail
           rm .github/workflows/apply-basalam-parent-sku-retry.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
