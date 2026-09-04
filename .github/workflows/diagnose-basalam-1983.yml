@@ -32,7 +32,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Find exact existing product, map, sync
+      - name: Find duplicate through global products API, map, sync
         shell: bash
         run: |
           set -euo pipefail
@@ -52,25 +52,31 @@ jobs:
               $s = preg_replace('/\s+/u', ' ', trim($s)) ?? trim($s);
               return mb_strtolower($s, 'UTF-8');
           };
+          $req = new ReflectionMethod(BasalamClient::class, 'request');
+          $req->setAccessible(true);
+          $res = $req->invoke($client, 'GET', '/v1/products', [
+              'product_title'=>$target,
+              'vendor_ids'=>[$client->getVendorId()],
+              'page'=>1,
+              'per_page'=>100,
+              'sort'=>'id:desc'
+          ], null, [], true);
+          echo 'SEARCH_STATUS=' . ($res['status'] ?? 0) . PHP_EOL;
+          echo 'SEARCH_ERROR=' . ($res['error'] ?? '') . PHP_EOL;
+          $body = $res['body'] ?? [];
+          echo 'SEARCH_BODY=' . json_encode($body, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          $items = $body['data'] ?? $body['products'] ?? $body;
           $matches = [];
-          for ($page=1; $page<=20; $page++) {
-              $res = $client->getVendorProducts(['statuses'=>[2976,3790],'page'=>$page,'per_page'=>100]);
-              if ($res['error']) { echo 'LIST_ERROR=' . $res['error'] . PHP_EOL; exit(1); }
-              $body = $res['body'] ?? [];
-              $items = $body['data'] ?? $body['products'] ?? $body;
-              if (!is_array($items) || !$items) break;
-              $count = 0;
+          if (is_array($items)) {
               foreach ($items as $item) {
                   if (!is_array($item)) continue;
-                  $count++;
                   $name = trim((string)($item['name'] ?? $item['title'] ?? ''));
-                  if ($name !== '' && $norm($name) === $norm($target)) {
+                  $vendorId = (int)($item['vendor']['id'] ?? $item['vendor_id'] ?? 0);
+                  if ($name !== '' && $norm($name) === $norm($target) && ($vendorId === 0 || $vendorId === $client->getVendorId())) {
                       $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name,'status'=>$item['status']??null];
                   }
               }
-              if ($count < 100) break;
           }
-          echo 'TARGET=' . $target . PHP_EOL;
           echo 'MATCHES=' . json_encode($matches, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
           $matches = array_values(array_filter($matches, fn($m)=>(int)$m['id']>0));
           if (count($matches) !== 1) { echo 'UNSAFE_MATCH_COUNT=' . count($matches) . PHP_EOL; exit(1); }
