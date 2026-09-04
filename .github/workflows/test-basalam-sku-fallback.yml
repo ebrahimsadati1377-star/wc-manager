@@ -1,0 +1,41 @@
+name: Test Basalam SKU fallback live
+
+on:
+  push:
+    branches: [tmp/test-basalam-sku-fallback]
+    paths:
+      - '.github/workflows/test-basalam-sku-fallback.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Force sync Woo 1317 on production
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          PAYLOAD='PD9waHAKcmVxdWlyZV9vbmNlICdpbmNsdWRlcy9ib290c3RyYXAucGhwJzsKJHNvdXJjZSA9IGZpbGVfZ2V0X2NvbnRlbnRzKCdpbmNsdWRlcy9CYXNhbGFtQ2xpZW50LnBocCcpOwppZiAoIWlzX3N0cmluZygkc291cmNlKSB8fCAhc3RyX2NvbnRhaW5zKCRzb3VyY2UsICdza3VfY29uZmxpY3RfaWdub3JlZCcpKSB7CiAgICB0aHJvdyBuZXcgUnVudGltZUV4Y2VwdGlvbignUHJvZHVjdGlvbiBkb2VzIG5vdCBoYXZlIFNLVSBmYWxsYmFjayB5ZXQuJyk7Cn0KJHN5bmMgPSBuZXcgQmFzYWxhbVN5bmMoKTsKJHJlc3VsdCA9ICRzeW5jLT5zeW5jUHJvZHVjdCgxMzE3LCB0cnVlKTsKZWNobyAnU1lOQz0nIC4ganNvbl9lbmNvZGUoJHJlc3VsdCwgSlNPTl9VTkVTQ0FQRURfVU5JQ09ERXxKU09OX1VORVNDQVBFRF9TTEFTSEVTKSAuIFBIUF9FT0w7CmVjaG8gJ01BUD0nIC4ganNvbl9lbmNvZGUoJHN5bmMtPmdldFByb2R1Y3RNYXAoMTMxNyksIEpTT05fVU5FU0NBUEVEX1VOSUNPREV8SlNPTl9VTkVTQ0FQRURfU0xBU0hFUykgLiBQSFBfRU9MOwppZiAoZW1wdHkoJHJlc3VsdFsnc3VjY2VzcyddKSkgewogICAgdGhyb3cgbmV3IFJ1bnRpbWVFeGNlcHRpb24oJ1dvbyAjMTMxNyBzeW5jIGZhaWxlZDogJyAuICgkcmVzdWx0WydtZXNzYWdlJ10gPz8gJ3Vua25vd24nKSk7Cn0K'
+          printf '%s' "$PAYLOAD" | base64 -d > /tmp/test.php
+          base64 -w0 /tmp/test.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
