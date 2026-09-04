@@ -133,12 +133,16 @@ require __DIR__ . '/partials/header.php';
 .desktop-basalam-sync { margin-top: .5rem; }
 .desktop-basalam-sync-time { margin-top: .25rem; color: #6c757d; font-size: .72rem; }
 
-.unified-product-tabs{display:flex;gap:.5rem;overflow-x:auto;padding:.2rem 0 .8rem;scrollbar-width:none}
+.unified-product-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;padding:.2rem 0 .7rem}
 .unified-product-tabs::-webkit-scrollbar{display:none}
-.unified-product-tab{border:1px solid #dee2e6;background:#fff;border-radius:999px;padding:.65rem .9rem;white-space:nowrap;min-height:44px;font-weight:700;color:#495057}
+.unified-product-tab{border:1px solid #dee2e6;background:#fff;border-radius:14px;padding:.7rem .5rem;min-height:52px;font-weight:800;color:#495057;display:flex;align-items:center;justify-content:center;gap:.35rem;text-align:center}
 .unified-product-tab.active{background:#0d6efd;border-color:#0d6efd;color:#fff}
 .unified-product-tab .count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:999px;background:rgba(0,0,0,.07);font-size:.75rem;margin-right:.35rem;padding:0 .35rem}
 .unified-product-tab.active .count{background:rgba(255,255,255,.2)}
+.unified-subfilters{display:flex;gap:.45rem;flex-wrap:wrap;margin:0 0 1rem;padding:.7rem;background:#fff;border:1px solid #e7e9ec;border-radius:14px}
+.unified-subfilters.d-none{display:none!important}
+.unified-subfilter{border:0;background:#f3f4f6;color:#495057;border-radius:999px;padding:.55rem .8rem;min-height:40px;font-weight:700}
+.unified-subfilter.active{background:#212529;color:#fff}
 .unified-basalam-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.85rem}
 .unified-basalam-card{background:#fff;border:1px solid #e7e9ec;border-radius:1rem;padding:1rem;box-shadow:0 .125rem .35rem rgba(0,0,0,.04)}
 .unified-basalam-head{display:flex;gap:.8rem;align-items:flex-start}
@@ -153,7 +157,11 @@ require __DIR__ . '/partials/header.php';
 .app-inline-notice{position:sticky;top:76px;z-index:1020}
 @media(max-width:767.98px){
   .unified-basalam-grid{grid-template-columns:1fr}
-  .unified-product-tabs{margin-left:-.25rem;margin-right:-.25rem;padding-left:.25rem;padding-right:.25rem}
+  .unified-product-tabs{margin:0;padding:.2rem 0 .7rem;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .unified-product-tab{font-size:.84rem;padding:.6rem .3rem;min-height:50px}
+  .unified-product-tab .count{min-width:20px;height:20px;font-size:.7rem;margin-right:0}
+  .unified-subfilters{padding:.55rem;gap:.35rem}
+  .unified-subfilter{font-size:.78rem;padding:.48rem .65rem;flex:1 1 auto}
   .unified-basalam-actions{display:grid;grid-template-columns:1fr 1fr}
   .unified-basalam-actions .btn{width:100%}
 }
@@ -181,14 +189,25 @@ require __DIR__ . '/partials/header.php';
   <a href="product_edit.php" class="btn btn-primary"><i class="fas fa-plus ms-1"></i> افزودن محصول جدید</a>
 </div>
 
-<div class="unified-product-tabs mb-2" id="unifiedProductTabs" aria-label="نمای محصولات">
-            <button type="button" class="unified-product-tab active" data-scope="site">سایت <span class="count"><?= (int)$total ?></span></button>
-            <button type="button" class="unified-product-tab" data-scope="linked">متصل به باسلام <span class="count" data-stat="linked">…</span></button>
-            <button type="button" class="unified-product-tab" data-scope="candidate">ادغام‌نشده <span class="count" data-stat="candidate">…</span></button>
-            <button type="button" class="unified-product-tab" data-scope="basalam_only">فقط باسلام <span class="count" data-stat="basalam_only">…</span></button>
-            <button type="button" class="unified-product-tab" data-scope="rejected">ردشده <span class="count" data-stat="rejected">…</span></button>
-          </div>
-          <div id="appInlineNotice" class="app-inline-notice"></div>
+<div class="unified-product-tabs" id="unifiedProductTabs" aria-label="بخش محصولات">
+  <button type="button" class="unified-product-tab active" data-primary="site"><i class="fas fa-store"></i><span>محصولات سایت</span><span class="count"><?= (int)$total ?></span></button>
+  <button type="button" class="unified-product-tab" data-primary="basalam"><i class="fas fa-bag-shopping"></i><span>باسلام</span><span class="count" data-stat="total">…</span></button>
+  <button type="button" class="unified-product-tab" data-primary="attention"><i class="fas fa-triangle-exclamation"></i><span>نیاز به رسیدگی</span><span class="count" data-attention-count>…</span></button>
+</div>
+<div class="unified-subfilters d-none" data-subfilter-group="basalam" aria-label="فیلتر محصولات باسلام">
+  <button type="button" class="unified-subfilter active" data-scope="all_basalam">همه باسلام</button>
+  <button type="button" class="unified-subfilter" data-scope="linked">متصل</button>
+  <button type="button" class="unified-subfilter" data-scope="candidate">ادغام‌نشده</button>
+  <button type="button" class="unified-subfilter" data-scope="basalam_only">فقط باسلام</button>
+</div>
+<div class="unified-subfilters d-none" data-subfilter-group="attention" aria-label="فیلتر موارد نیازمند رسیدگی">
+  <button type="button" class="unified-subfilter active" data-scope="rejected">ردشده</button>
+  <button type="button" class="unified-subfilter" data-scope="pending">در انتظار</button>
+  <button type="button" class="unified-subfilter" data-scope="unpublished">منتشرنشده</button>
+  <button type="button" class="unified-subfilter" data-scope="image_issue">مشکل عکس</button>
+  <button type="button" class="unified-subfilter" data-scope="category_issue">مشکل دسته</button>
+</div>
+<div id="appInlineNotice" class="app-inline-notice"></div>
 
 <div id="wooProductsView">
 <?php if ($loadError): ?>
@@ -463,10 +482,15 @@ function escapeAppHtml(value) {
 }
 
 const scopeTitles = {
-  linked: ['محصولات متصل به باسلام', 'این محصولات به یک محصول Woo متصل هستند.'],
-  candidate: ['در سایت هست؛ ادغام نشده', 'تطبیق مطمئن بر اساس SKU یا عنوان دقیق پیدا شده ولی هنوز اتصال ثبت نشده است.'],
+  all_basalam: ['محصولات باسلام', 'همه محصولات موجود در کاتالوگ باسلام.'],
+  linked: ['متصل به سایت', 'محصولات باسلام که به Woo متصل هستند.'],
+  candidate: ['ادغام‌نشده', 'تطبیق مطمئن پیدا شده اما اتصال هنوز ثبت نشده است.'],
   basalam_only: ['فقط در باسلام', 'در سایت معادل مطمئنی برای این محصولات پیدا نشده است.'],
-  rejected: ['محصولات ردشده باسلام', 'دلیل رد، اصلاح تصویر و بروزرسانی از همین صفحه قابل انجام است.']
+  rejected: ['ردشده‌های باسلام', 'محصولاتی که باسلام تایید نکرده است.'],
+  pending: ['در انتظار بررسی', 'محصولاتی که هنوز بررسی باسلام تمام نشده است.'],
+  unpublished: ['منتشرنشده', 'محصولاتی که در باسلام منتشر نیستند.'],
+  image_issue: ['مشکل تصویر', 'ردشده‌هایی که دلیلشان به تصویر، پوشش یا فیلترینگ عکس مربوط است.'],
+  category_issue: ['مشکل دسته‌بندی', 'ردشده‌هایی که دلیلشان به دسته‌بندی باسلام مربوط است.']
 };
 
 async function loadUnifiedBasalam(scope, silent = false) {
@@ -504,6 +528,8 @@ function updateUnifiedStats(stats) {
     const key = el.dataset.stat;
     if (Object.prototype.hasOwnProperty.call(stats, key)) el.textContent = stats[key];
   });
+  const attention = Number(stats.rejected || 0) + Number(stats.pending || 0) + Number(stats.unpublished || 0) + Number(stats.inactive || 0);
+  document.querySelectorAll('[data-attention-count]').forEach(el => { el.textContent = attention; });
 }
 
 function marketBadgeClass(key) {
@@ -597,12 +623,37 @@ function bindUnifiedActions(scope) {
   }));
 }
 
+function showSubfilterGroup(group) {
+  document.querySelectorAll('[data-subfilter-group]').forEach(el => el.classList.toggle('d-none', el.dataset.subfilterGroup !== group));
+}
+
+async function activatePrimary(primary) {
+  document.querySelectorAll('.unified-product-tab').forEach(x => x.classList.toggle('active', x.dataset.primary === primary));
+  if (primary === 'site') {
+    showSubfilterGroup('');
+    await loadUnifiedBasalam('site');
+    return;
+  }
+  const group = primary === 'attention' ? 'attention' : 'basalam';
+  showSubfilterGroup(group);
+  const defaultScope = primary === 'attention' ? 'rejected' : 'all_basalam';
+  const holder = document.querySelector('[data-subfilter-group="' + group + '"]');
+  holder?.querySelectorAll('.unified-subfilter').forEach(x => x.classList.toggle('active', x.dataset.scope === defaultScope));
+  await loadUnifiedBasalam(defaultScope);
+}
+
 document.querySelectorAll('.unified-product-tab').forEach(tab => {
   tab.addEventListener('click', async function(){
-    document.querySelectorAll('.unified-product-tab').forEach(x => x.classList.remove('active'));
+    try { await activatePrimary(this.dataset.primary || 'site'); } catch(e) { showAppNotice(e.message || 'بارگذاری ناموفق بود.', false); }
+  });
+});
+
+document.querySelectorAll('.unified-subfilter').forEach(tab => {
+  tab.addEventListener('click', async function(){
+    const holder=this.closest('[data-subfilter-group]');
+    holder?.querySelectorAll('.unified-subfilter').forEach(x => x.classList.remove('active'));
     this.classList.add('active');
-    const scope=this.dataset.scope || 'site';
-    try { await loadUnifiedBasalam(scope); } catch(e) { showAppNotice(e.message || 'بارگذاری ناموفق بود.', false); }
+    try { await loadUnifiedBasalam(this.dataset.scope || 'all_basalam'); } catch(e) { showAppNotice(e.message || 'بارگذاری ناموفق بود.', false); }
   });
 });
 
