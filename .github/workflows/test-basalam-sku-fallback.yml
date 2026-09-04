@@ -1,4 +1,4 @@
-name: Inspect Basalam category migration state
+name: Pilot Basalam category migration v3
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
 jobs:
-  inspect:
+  migrate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,10 +31,10 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Inspect Woo 1056 and Basalam mapping
+      - name: Safely migrate Woo 1056 to correct Basalam category
         shell: bash
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
-          php -l tools/inspect-basalam-1056.php
-          base64 -w0 tools/inspect-basalam-1056.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
+          php -l tools/pilot-migrate-basalam-1056-v3.php
+          base64 -w0 tools/pilot-migrate-basalam-1056-v3.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
