@@ -1,0 +1,81 @@
+name: Diagnose remaining Basalam catalog sync errors
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/diag-basalam-batch-errors.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect affected Woo and Basalam products
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+          $cases = [
+            [1083,57614480],[1075,57614464],[1061,0],[1056,57614424],
+            [1043,57614401],[1039,57614396],[1036,57614393]
+          ];
+          $mapRef = new ReflectionMethod(BasalamSync::class, 'getVariationMapsByProduct');
+          $mapRef->setAccessible(true);
+          $catRef = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
+          $catRef->setAccessible(true);
+          foreach ($cases as [$wooId,$expectedBasalamId]) {
+              $p = $wc->getProduct($wooId);
+              $product = (array)($p['body'] ?? []);
+              $map = $sync->getProductMap($wooId);
+              $basalamId = (int)($map['basalam_product_id'] ?? $expectedBasalamId);
+              $vr = $wc->getVariations($wooId, ['per_page'=>100]);
+              $wooVars = [];
+              foreach ((array)($vr['body'] ?? []) as $v) {
+                  $wooVars[] = [
+                    'id'=>$v['id']??null,'sku'=>$v['sku']??null,'price'=>$v['price']??null,
+                    'stock'=>$v['stock_quantity']??null,'attributes'=>$v['attributes']??[]
+                  ];
+              }
+              $b = $basalamId > 0 ? $client->getProduct($basalamId, true) : ['body'=>[],'error'=>null];
+              $bb = (array)($b['body'] ?? []);
+              $bvars=[];
+              foreach ((array)($bb['variants'] ?? []) as $v) {
+                  $bvars[]=['id'=>$v['id']??null,'sku'=>$v['sku']??null,'properties'=>$v['properties']??[]];
+              }
+              $cat = $catRef->invoke($sync, $product);
+              echo "CASE={$wooId}\n";
+              echo 'WOO=' . json_encode(['id'=>$wooId,'name'=>$product['name']??null,'sku'=>$product['sku']??null,'type'=>$product['type']??null,'attributes'=>$product['attributes']??[],'categories'=>$product['categories']??[]], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'WOO_VARIANTS=' . json_encode($wooVars, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'PRODUCT_MAP=' . json_encode($map, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'VAR_MAPS=' . json_encode($mapRef->invoke($sync,$wooId), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'WOO_CATEGORY_MAP=' . json_encode($cat, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'BASALAM=' . json_encode(['id'=>$bb['id']??$basalamId,'name'=>$bb['name']??null,'sku'=>$bb['sku']??null,'category'=>$bb['category']??($bb['category_id']??null),'product_attribute'=>$bb['product_attribute']??($bb['attributes']??null),'variants'=>$bvars], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'BASALAM_ERROR=' . ($b['error'] ?? '') . PHP_EOL;
+          }
+          PHP
