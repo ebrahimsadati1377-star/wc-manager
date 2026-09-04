@@ -83,39 +83,58 @@ class BasalamClient
         // never send category_id on PATCH; creation still sends it normally.
         unset($data['category_id']);
 
-        $result = $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+        $retryData = $data;
+        $ignored = [];
 
-        // Some legacy Basalam catalogs contain an old/inactive product that still
-        // owns the Woo SKU. For an already-mapped Basalam product, do not let that
-        // stale SKU block price/stock/content/image updates. Retry the same PATCH
-        // once without SKU. Creation is intentionally not affected by this rule.
-        if (
-            $result['status'] === 422
-            && !empty($result['error'])
-            && array_key_exists('sku', $data)
-            && trim((string)$data['sku']) !== ''
-            && str_contains((string)$result['error'], 'sku')
-            && str_contains((string)$result['error'], 'یکتا')
-        ) {
-            $retryData = $data;
-            $conflictingSku = trim((string)$retryData['sku']);
-            unset($retryData['sku']);
-
-            $retry = $this->request('PATCH', '/v1/products/' . $productId, [], $retryData);
-            if (!$retry['error']) {
-                logActivity(
-                    'basalam_update_sku_conflict',
-                    'product:' . $productId,
-                    sprintf(
-                        'Basalam #%d updated without duplicate SKU %s after 422 uniqueness conflict',
-                        $productId,
-                        $conflictingSku
-                    )
-                );
-                $retry['sku_conflict_ignored'] = true;
-                $retry['conflicting_sku'] = $conflictingSku;
-                return $retry;
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $result = $this->request('PATCH', '/v1/products/' . $productId, [], $retryData);
+            if (!$result['error']) {
+                if ($ignored) {
+                    $result['ignored_conflicts'] = $ignored;
+                    foreach ($ignored as $field => $value) {
+                        logActivity(
+                            'basalam_update_' . $field . '_conflict',
+                            'product:' . $productId,
+                            sprintf(
+                                'Basalam #%d updated without conflicting %s %s after 422 validation',
+                                $productId,
+                                $field,
+                                (string)$value
+                            )
+                        );
+                    }
+                }
+                return $result;
             }
+
+            if (($result['status'] ?? 0) !== 422) {
+                return $result;
+            }
+
+            $error = (string)$result['error'];
+            if (
+                array_key_exists('sku', $retryData)
+                && trim((string)$retryData['sku']) !== ''
+                && str_contains($error, 'sku')
+                && str_contains($error, 'یکتا')
+            ) {
+                $ignored['sku'] = trim((string)$retryData['sku']);
+                unset($retryData['sku']);
+                continue;
+            }
+
+            if (
+                array_key_exists('name', $retryData)
+                && trim((string)$retryData['name']) !== ''
+                && str_contains($error, 'name')
+                && (str_contains($error, 'تکراری') || str_contains($error, 'قبلا'))
+            ) {
+                $ignored['name'] = trim((string)$retryData['name']);
+                unset($retryData['name']);
+                continue;
+            }
+
+            return $result;
         }
 
         return $result;
