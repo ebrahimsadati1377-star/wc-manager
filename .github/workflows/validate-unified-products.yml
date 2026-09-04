@@ -1,0 +1,33 @@
+name: Validate unified products UI
+on:
+  push:
+    branches: [codex/unify-product-app]
+    paths:
+      - '.github/workflows/validate-unified-products.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/unify-product-app
+      - name: PHP lint
+        run: |
+          php -l public/products.php
+          php -l public/partials/header.php
+          php -l public/ajax/basalam_unified_catalog.php
+          php -l public/ajax/basalam_link_candidate.php
+      - name: JavaScript syntax check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          text=Path('public/products.php').read_text()
+          blocks=re.findall(r'<script>(.*?)</script>', text, flags=re.S)
+          if not blocks:
+              raise SystemExit('no inline script found')
+          Path('/tmp/products-inline.js').write_text('\n'.join(blocks))
+          PY
+          node --check /tmp/products-inline.js
