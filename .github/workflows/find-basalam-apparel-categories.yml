@@ -49,16 +49,20 @@ jobs:
               $id = (int)($node['id'] ?? 0);
               $path = $parents;
               if ($title !== '') $path[] = $title;
-              if ($id > 0 && $title !== '' && preg_match('/(ست|اورال|سرهمی|شلوار|شومیز|بلوز|پیراهن|مانتو|تونیک|دامن|تاپ|تیشرت|زنانه|دخترانه)/u', $title)) {
-                  $hits[$id] = ['id'=>$id,'title'=>$title,'path'=>implode(' > ', $path)];
+              $pathText = implode(' > ', $path);
+              if ($id > 0 && $title !== '' && (
+                  preg_match('/(ست|اورال|سرهمی|شلوار|شومیز|بلوز|پیراهن|مانتو|تونیک|دامن|تاپ|تیشرت)/u', $title)
+                  || (str_contains($pathText, 'زنانه') && count($path) >= 3)
+              )) {
+                  $hits[$id] = ['id'=>$id,'title'=>$title,'path'=>$pathText];
               }
-              foreach (['children','categories','items','data'] as $key) {
-                  if (!isset($node[$key]) || !is_array($node[$key])) continue;
-                  foreach ($node[$key] as $child) $walk($child, $path);
+              if (!empty($node['children']) && is_array($node['children'])) {
+                  foreach ($node['children'] as $child) $walk($child, $path);
               }
           };
           $body = $res['body'] ?? [];
-          foreach ((array)$body as $node) $walk($node, []);
+          $roots = is_array($body['data'] ?? null) ? $body['data'] : $body;
+          foreach ((array)$roots as $node) $walk($node, []);
           ksort($hits);
           foreach ($hits as $hit) echo 'CATEGORY=' . json_encode($hit, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
           PHP
