@@ -215,6 +215,30 @@ class BasalamSync
 
         $creating = !$map || (int)($map['basalam_product_id'] ?? 0) <= 0;
         $warnings = [];
+        $attributeCategoryId = (int)$categoryMap['basalam_category_id'];
+
+        // Existing Basalam products cannot always change category. Build product
+        // attributes against the product's real Basalam category, not a newer Woo
+        // mapping, otherwise Basalam rejects the update with product_attribute 422.
+        if (!$creating) {
+            $existingBasalam = $this->basalam->getProduct((int)$map['basalam_product_id'], true);
+            if (!$existingBasalam['error']) {
+                $actualCategoryId = (int)(
+                    $existingBasalam['body']['category']['id']
+                    ?? $existingBasalam['body']['category_id']
+                    ?? 0
+                );
+                if ($actualCategoryId > 0) {
+                    if ($actualCategoryId !== $attributeCategoryId) {
+                        $warnings[] = sprintf(
+                            'دسته محصول باسلام #%d با دسته نگاشت‌شده Woo متفاوت است؛ ویژگی‌ها بر اساس دسته فعلی باسلام سینک شدند و دسته به‌صورت خودکار تغییر نکرد.',
+                            $actualCategoryId
+                        );
+                    }
+                    $attributeCategoryId = $actualCategoryId;
+                }
+            }
+        }
 
         $payload = $this->buildProductPayload(
             $product,
@@ -228,7 +252,7 @@ class BasalamSync
             $attributeResult = $attributeMapper->build(
                 $product,
                 $variations,
-                (int)$categoryMap['basalam_category_id'],
+                $attributeCategoryId,
                 $creating ? null : (int)($map['basalam_product_id'] ?? 0)
             );
             if (!empty($attributeResult['attributes'])) {
@@ -388,8 +412,30 @@ class BasalamSync
 
         if (($product['type'] ?? 'simple') === 'variable') {
             if ($includeVariants) {
+                $variationSkuCounts = [];
+                foreach ($variations as $variation) {
+                    $variationSku = trim((string)($variation['sku'] ?? ''));
+                    if ($variationSku !== '') {
+                        $variationSkuCounts[$variationSku] = ($variationSkuCounts[$variationSku] ?? 0) + 1;
+                    }
+                }
+
                 $payload['variants'] = array_values(array_filter(array_map(
-                    fn(array $variation) => $this->buildVariantPayload($variation, $priceMultiplier),
+                    function(array $variation) use ($priceMultiplier, $sku, $variationSkuCounts) {
+                        $variantPayload = $this->buildVariantPayload($variation, $priceMultiplier);
+                        if ($variantPayload === null) {
+                            return null;
+                        }
+
+                        $variationSku = trim((string)($variantPayload['sku'] ?? ''));
+                        if (
+                            $variationSku !== ''
+                            && ($variationSku === $sku || ($variationSkuCounts[$variationSku] ?? 0) > 1)
+                        ) {
+                            unset($variantPayload['sku']);
+                        }
+                        return $variantPayload;
+                    },
                     $variations
                 )));
             }
@@ -558,6 +604,7 @@ class BasalamSync
 
         $existingMaps = $this->getVariationMapsByProduct($wcProductId);
         $used = [];
+        $basalamParentSku = trim((string)($productRes['body']['sku'] ?? ''));
 
         // Reserve Basalam variants that are already mapped so a new/unmapped Woo
         // variation can never be attached to an existing mapping by mistake.
@@ -614,7 +661,11 @@ class BasalamSync
                 'stock' => $this->wooStock($wooVariation),
             ];
             $sku = trim((string)($wooVariation['sku'] ?? ''));
-            if ($sku !== '' && ($skuCounts[$sku] ?? 0) === 1) {
+            if (
+                $sku !== ''
+                && ($skuCounts[$sku] ?? 0) === 1
+                && $sku !== $basalamParentSku
+            ) {
                 $update['sku'] = $sku;
             }
 
