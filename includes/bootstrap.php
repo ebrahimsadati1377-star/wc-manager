@@ -70,6 +70,7 @@ require_once __DIR__ . '/BasalamClient.php';
 require_once __DIR__ . '/BasalamImageProcessor.php';
 require_once __DIR__ . '/BasalamAttributeMapper.php';
 require_once __DIR__ . '/BasalamSync.php';
+require_once __DIR__ . '/BasalamCategoryMigrator.php';
 
 // Every endpoint inside public/ajax is protected centrally. Existing endpoint-
 // level CSRF checks remain harmless defense in depth.
