@@ -14,44 +14,49 @@ $wooId = 2040;
 $basalamId = 57650781;
 $categoryId = 231;
 
-$wooRes = $woo->getProduct($wooId);
+$syncResult = $sync->syncProduct($wooId, true);
 $attrRes = $basalam->getCategoryAttributes($categoryId, $basalamId, false);
 $productRes = $basalam->getProduct($basalamId, true);
 
-$wooProduct = is_array($wooRes['body'] ?? null) ? $wooRes['body'] : [];
-$basalamProduct = is_array($productRes['body'] ?? null) ? $productRes['body'] : [];
+$definitions = [];
+$groups = $attrRes['body']['data'] ?? [];
+if (is_array($groups)) {
+    foreach ($groups as $group) {
+        foreach (($group['attributes'] ?? []) as $attribute) {
+            if (!is_array($attribute)) continue;
+            $definitions[] = [
+                'id' => $attribute['id'] ?? null,
+                'title' => $attribute['title'] ?? null,
+                'value' => $attribute['value'] ?? null,
+                'selected_values' => $attribute['selected_values'] ?? null,
+                'required' => $attribute['required'] ?? null,
+            ];
+        }
+    }
+}
 
+$body = is_array($productRes['body'] ?? null) ? $productRes['body'] : [];
 $out = [
-    'woo' => [
-        'status' => $wooRes['status'] ?? 0,
-        'error' => $wooRes['error'] ?? null,
-        'id' => $wooProduct['id'] ?? null,
-        'name' => $wooProduct['name'] ?? null,
-        'attributes' => $wooProduct['attributes'] ?? [],
-        'dimensions' => $wooProduct['dimensions'] ?? [],
-        'categories' => $wooProduct['categories'] ?? [],
-        'tags' => $wooProduct['tags'] ?? [],
-        'short_description' => strip_tags((string)($wooProduct['short_description'] ?? '')),
-        'description' => strip_tags((string)($wooProduct['description'] ?? '')),
+    'sync' => [
+        'success' => $syncResult['success'] ?? false,
+        'message' => $syncResult['message'] ?? '',
+        'warnings' => $syncResult['warnings'] ?? [],
+        'basalam_product_id' => $syncResult['basalam_product_id'] ?? null,
     ],
-    'category_attributes' => [
-        'status' => $attrRes['status'] ?? 0,
-        'error' => $attrRes['error'] ?? null,
-        'body' => $attrRes['body'] ?? [],
-    ],
-    'basalam_product' => [
+    'category_attribute_status' => $attrRes['status'] ?? 0,
+    'category_attribute_error' => $attrRes['error'] ?? null,
+    'attributes' => $definitions,
+    'product' => [
         'status' => $productRes['status'] ?? 0,
         'error' => $productRes['error'] ?? null,
-        'id' => $basalamProduct['id'] ?? null,
-        'title' => $basalamProduct['title'] ?? ($basalamProduct['name'] ?? null),
-        'attributes' => $basalamProduct['attributes'] ?? null,
-        'product_attribute' => $basalamProduct['product_attribute'] ?? null,
-        'revision_attributes' => $basalamProduct['revision']['data']['attributes'] ?? null,
+        'attributes' => $body['attributes'] ?? null,
+        'product_attribute' => $body['product_attribute'] ?? null,
+        'revision_attributes' => $body['revision']['data']['attributes'] ?? null,
     ],
 ];
 
 $json = json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-if (!is_string($json)) {
-    $json = '{}';
-}
-echo 'ATTR_INSPECT_B64=' . base64_encode($json) . PHP_EOL;
+if (!is_string($json)) $json = '{}';
+echo 'ATTR_VERIFY_B64=' . base64_encode($json) . PHP_EOL;
+
+if (empty($syncResult['success'])) exit(2);
