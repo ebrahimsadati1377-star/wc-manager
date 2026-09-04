@@ -16,6 +16,8 @@ $isAdminArea = in_array($currentPage, ['basalam.php', 'users.php', 'settings.php
 $userName = trim((string)($user['full_name'] ?? '')) ?: 'کاربر';
 $userRole = (($user['role'] ?? '') === 'admin') ? 'مدیر' : 'ویرایشگر';
 $userInitial = function_exists('mb_substr') ? mb_substr($userName, 0, 1, 'UTF-8') : substr($userName, 0, 1);
+$styleFile = __DIR__ . '/../assets/css/style.css';
+$styleVersion = is_file($styleFile) ? (string)filemtime($styleFile) : '1';
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -28,9 +30,14 @@ $userInitial = function_exists('mb_substr') ? mb_substr($userName, 0, 1, 'UTF-8'
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link rel="stylesheet" href="assets/css/style.css">
+<link rel="stylesheet" href="assets/css/style.css?v=<?= e($styleVersion) ?>">
 <style>
 :root{--app-nav-bg:#111827;--app-nav-border:rgba(255,255,255,.08);--app-nav-muted:#9ca3af;--app-nav-blue:#3b82f6}
+html,body{max-width:100%;overflow-x:hidden}
+.container-fluid{min-width:0}
+.app-page-head,.app-section-card,.app-mobile-card{min-width:0}
+@media(max-width:767.98px){.app-desktop-table{display:none!important}.app-mobile-list{display:block!important}.container-fluid.py-4{padding:1rem .8rem!important}.app-page-head{align-items:stretch;flex-direction:column;margin-bottom:1rem}.app-page-head__actions{display:grid;grid-template-columns:1fr}.app-page-head__actions .btn{width:100%;min-height:46px}}
+
 .app-navbar{background:rgba(17,24,39,.97);border-bottom:1px solid var(--app-nav-border);box-shadow:0 7px 24px rgba(15,23,42,.12);backdrop-filter:blur(14px);padding:.62rem 0;z-index:1050}
 .app-navbar .container-fluid{max-width:1480px}
 .app-brand{display:flex;align-items:center;gap:.72rem;color:#fff;text-decoration:none;min-width:0}
