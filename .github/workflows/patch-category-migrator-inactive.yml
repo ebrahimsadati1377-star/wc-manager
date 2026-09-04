@@ -1,0 +1,43 @@
+name: Patch Basalam migration inactive safety
+on:
+  push:
+    branches: [codex/basalam-category-migration-inactive]
+    paths:
+      - '.github/workflows/patch-category-migrator-inactive.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/basalam-category-migration-inactive
+      - name: Accept any non-public legacy Basalam state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('includes/BasalamCategoryMigrator.php')
+          s=p.read_text()
+          old="""                $verifyStatus = (int)($verifyBody['status']['value'] ?? $verifyBody['status'] ?? 0);\n                $parentSkuReleased = trim((string)($verifyBody['sku'] ?? '')) === '';\n                $variantSkusReleased = true;\n                foreach ((array)($verifyBody['variants'] ?? $verifyBody['variant'] ?? []) as $variant) {\n                    if (trim((string)($variant['sku'] ?? '')) !== '') {\n                        $variantSkusReleased = false;\n                        break;\n                    }\n                }\n                if (\n                    $verifyStatus === 3790\n                    && $this->normalizeTitle($verifyTitle) !== $this->normalizeTitle($wooTitle)\n                    && $parentSkuReleased\n                    && $variantSkusReleased\n                ) {\n                    $legacySafe = true;\n                    break;\n                }\n"""
+          new="""                $verifyStatus = (int)($verifyBody['status']['value'] ?? $verifyBody['status'] ?? 0);\n                $parentSkuReleased = trim((string)($verifyBody['sku'] ?? '')) === '';\n                $variantSkusReleased = true;\n                foreach ((array)($verifyBody['variants'] ?? $verifyBody['variant'] ?? []) as $variant) {\n                    if (trim((string)($variant['sku'] ?? '')) !== '') {\n                        $variantSkusReleased = false;\n                        break;\n                    }\n                }\n                // Basalam may keep a renamed legacy product in review/pending status\n                // (for example 3568) instead of the requested 3790. What matters for\n                // a safe replacement is that the legacy listing is not public or\n                // purchasable and no longer owns the Woo title/SKUs.\n                $legacyPubliclyInactive =\n                    empty($verifyBody['is_showable'])\n                    && empty($verifyBody['is_available']);\n                if (\n                    $legacyPubliclyInactive\n                    && $this->normalizeTitle($verifyTitle) !== $this->normalizeTitle($wooTitle)\n                    && $parentSkuReleased\n                    && $variantSkusReleased\n                ) {\n                    $legacySafe = true;\n                    break;\n                }\n"""
+          if old not in s:
+              raise SystemExit('target safety block not found')
+          s=s.replace(old,new,1)
+          old2="""                $suffix = $verifyError ? ' آخرین خطا: ' . $verifyError : '';\n                throw new RuntimeException('محصول قدیمی به حالت امن منتقل نشد؛ ساخت محصول جدید متوقف شد.' . $suffix);\n"""
+          new2="""                $observed = $verifyBody ? sprintf(\n                    ' وضعیت=%d، قابل نمایش=%s، قابل خرید=%s، SKU والد=%s',\n                    (int)($verifyBody['status']['value'] ?? $verifyBody['status'] ?? 0),\n                    !empty($verifyBody['is_showable']) ? 'بله' : 'خیر',\n                    !empty($verifyBody['is_available']) ? 'بله' : 'خیر',\n                    trim((string)($verifyBody['sku'] ?? '')) === '' ? 'آزاد' : 'درگیر'\n                ) : '';\n                $suffix = $verifyError ? ' آخرین خطا: ' . $verifyError : '';\n                throw new RuntimeException('محصول قدیمی به حالت امن منتقل نشد؛ ساخت محصول جدید متوقف شد.' . $observed . $suffix);\n"""
+          if old2 not in s:
+              raise SystemExit('target error block not found')
+          p.write_text(s.replace(old2,new2,1))
+          PY
+          php -l includes/BasalamCategoryMigrator.php
+      - name: Commit fix
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/BasalamCategoryMigrator.php
+          git commit -m "Accept hidden Basalam legacy state during category migration"
+          git push origin HEAD:codex/basalam-category-migration-inactive
