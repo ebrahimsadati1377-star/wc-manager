@@ -1,0 +1,94 @@
+name: Patch Basalam duplicate SKU fallback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-basalam-sku-fallback.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch BasalamClient update retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('includes/BasalamClient.php')
+          s = p.read_text()
+          old = """    public function updateProduct(int $productId, array $data): array
+    {
+        // Basalam does not allow changing category_id after a product is created.
+        // Existing Woo→Basalam mappings may use a newer Woo category mapping, so
+        // never send category_id on PATCH; creation still sends it normally.
+        unset($data['category_id']);
+        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+    }
+"""
+          new = """    public function updateProduct(int $productId, array $data): array
+    {
+        // Basalam does not allow changing category_id after a product is created.
+        // Existing Woo→Basalam mappings may use a newer Woo category mapping, so
+        // never send category_id on PATCH; creation still sends it normally.
+        unset($data['category_id']);
+
+        $result = $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+
+        // Some legacy Basalam catalogs contain an old/inactive product that still
+        // owns the Woo SKU. For an already-mapped Basalam product, do not let that
+        // stale SKU block price/stock/content/image updates. Retry the same PATCH
+        // once without SKU. Creation is intentionally not affected by this rule.
+        if (
+            $result['status'] === 422
+            && !empty($result['error'])
+            && array_key_exists('sku', $data)
+            && trim((string)$data['sku']) !== ''
+            && str_contains((string)$result['error'], 'sku')
+            && str_contains((string)$result['error'], 'یکتا')
+        ) {
+            $retryData = $data;
+            $conflictingSku = trim((string)$retryData['sku']);
+            unset($retryData['sku']);
+
+            $retry = $this->request('PATCH', '/v1/products/' . $productId, [], $retryData);
+            if (!$retry['error']) {
+                logActivity(
+                    'basalam_update_sku_conflict',
+                    'product:' . $productId,
+                    sprintf(
+                        'Basalam #%d updated without duplicate SKU %s after 422 uniqueness conflict',
+                        $productId,
+                        $conflictingSku
+                    )
+                );
+                $retry['sku_conflict_ignored'] = true;
+                $retry['conflicting_sku'] = $conflictingSku;
+                return $retry;
+            }
+        }
+
+        return $result;
+    }
+"""
+          if old not in s:
+              raise SystemExit('BasalamClient updateProduct target block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          php -l includes/BasalamClient.php
+      - name: Commit source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/BasalamClient.php
+          git commit -m "Retry mapped Basalam updates without conflicting SKU"
+          git push origin HEAD:main
