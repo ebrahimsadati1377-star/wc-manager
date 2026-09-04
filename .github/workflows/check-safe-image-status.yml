@@ -1,0 +1,66 @@
+name: Check Basalam safe image status
+on:
+  push:
+    branches: [ops/check-safe-image-status]
+    paths:
+      - '.github/workflows/check-safe-image-status.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Check submitted products
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/check-safe-status.php <<'PHP'
+          <?php
+          $root = rtrim((string)($argv[1] ?? ''), '/');
+          require $root . '/includes/bootstrap.php';
+          $client = new BasalamClient();
+          $db = Database::get();
+          $rows = $db->query("SELECT wc_product_id, basalam_product_id, crop_top_percent, submitted_at FROM basalam_safe_image_jobs WHERE last_status='submitted' ORDER BY submitted_at DESC")->fetchAll();
+          $out = [];
+          foreach ($rows as $row) {
+              $bid = (int)$row['basalam_product_id'];
+              $r = $client->getProduct($bid, true);
+              $b = is_array($r['body'] ?? null) ? $r['body'] : [];
+              $status = $b['status'] ?? null;
+              $value = is_array($status) ? (int)($status['value'] ?? 0) : (is_numeric($status) ? (int)$status : 0);
+              $name = is_array($status) ? (string)($status['name'] ?? '') : (is_string($status) ? $status : '');
+              $revision = is_array($b['revision'] ?? null) ? $b['revision'] : [];
+              $meta = is_array($revision['metadata'] ?? null) ? $revision['metadata'] : [];
+              $illegal = is_array($meta['illegal_photos'] ?? null) ? $meta['illegal_photos'] : [];
+              $out[] = [
+                  'woo'=>(int)$row['wc_product_id'],
+                  'basalam'=>$bid,
+                  'crop'=>(int)$row['crop_top_percent'],
+                  'submitted_at'=>(string)$row['submitted_at'],
+                  'status'=>['value'=>$value,'name'=>$name],
+                  'showable'=>array_key_exists('is_showable',$b)?(bool)$b['is_showable']:null,
+                  'available'=>array_key_exists('is_available',$b)?(bool)$b['is_available']:null,
+                  'illegal_count'=>count($illegal),
+              ];
+          }
+          echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          PHP
+          scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/check-safe-status.php "$DEPLOY_USER@$DEPLOY_HOST:/tmp/check-safe-status.php"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "php /tmp/check-safe-status.php '$DEPLOY_PATH'; rc=\$?; rm -f /tmp/check-safe-status.php; exit \$rc"
