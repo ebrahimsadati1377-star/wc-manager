@@ -1,0 +1,84 @@
+name: Audit Woo to Basalam category map table
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/audit-basalam-category-map-table.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Print category mappings and usage
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $db = Database::get();
+          $maps = $db->query('SELECT * FROM basalam_category_map ORDER BY wc_category_id')->fetchAll();
+          $cats = [];
+          for ($page=1; $page<=10; $page++) {
+              $res = $wc->getCategories(['page'=>$page,'per_page'=>100,'hide_empty'=>'false']);
+              if ($res['error']) { echo 'WC_CATEGORY_ERROR=' . $res['error'] . PHP_EOL; break; }
+              $batch = is_array($res['body'] ?? null) ? $res['body'] : [];
+              foreach ($batch as $cat) {
+                  if (!is_array($cat)) continue;
+                  $cats[(int)($cat['id'] ?? 0)] = $cat;
+              }
+              $pages = max(1, (int)($res['headers']['total_pages'] ?? 1));
+              if ($page >= $pages || count($batch) < 100) break;
+          }
+          foreach ($maps as $map) {
+              $wcId = (int)$map['wc_category_id'];
+              $cat = $cats[$wcId] ?? [];
+              $countStmt = $db->prepare('SELECT COUNT(*) FROM basalam_product_map bpm WHERE bpm.basalam_product_id IS NOT NULL');
+              // Count mapped Woo products using this Woo category by reading products, below.
+              $used = [];
+              $rows = $db->query('SELECT wc_product_id FROM basalam_product_map WHERE basalam_product_id IS NOT NULL')->fetchAll();
+              foreach ($rows as $r) {
+                  $p = $wc->getProduct((int)$r['wc_product_id']);
+                  if ($p['error']) continue;
+                  foreach ((array)($p['body']['categories'] ?? []) as $pc) {
+                      if ((int)($pc['id'] ?? 0) === $wcId) {
+                          $used[] = (int)$r['wc_product_id'];
+                          break;
+                      }
+                  }
+              }
+              echo 'MAP=' . json_encode([
+                  'wc_category_id'=>$wcId,
+                  'wc_category_name'=>(string)($cat['name'] ?? ''),
+                  'wc_parent_id'=>(int)($cat['parent'] ?? 0),
+                  'basalam_category_id'=>(int)$map['basalam_category_id'],
+                  'basalam_category_name'=>(string)($map['basalam_category_name'] ?? ''),
+                  'mapped_product_count'=>count($used),
+                  'sample_woo_ids'=>array_slice($used,0,10),
+              ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          }
+          PHP
