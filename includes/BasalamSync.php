@@ -223,6 +223,22 @@ class BasalamSync
             $creating
         );
 
+        if ($this->settingBool('basalam_sync_attributes', true)) {
+            $attributeMapper = new BasalamAttributeMapper($this->basalam);
+            $attributeResult = $attributeMapper->build(
+                $product,
+                $variations,
+                (int)$categoryMap['basalam_category_id'],
+                $creating ? null : (int)($map['basalam_product_id'] ?? 0)
+            );
+            if (!empty($attributeResult['attributes'])) {
+                $payload['product_attribute'] = array_values($attributeResult['attributes']);
+            }
+            if (!empty($attributeResult['warnings'])) {
+                $warnings = array_merge($warnings, $attributeResult['warnings']);
+            }
+        }
+
         if ($creating && $this->settingBool('basalam_sync_images', true)) {
             $imageIds = $this->uploadWooImages($product, $warnings);
             if ($imageIds) {
@@ -769,6 +785,8 @@ class BasalamSync
                 'description' => $product['description'] ?? null,
                 'categories' => $product['categories'] ?? [],
                 'tags' => $product['tags'] ?? [],
+                'attributes' => $product['attributes'] ?? [],
+                'dimensions' => $product['dimensions'] ?? [],
                 'images' => array_map(
                     fn($image) => ['id' => $image['id'] ?? null, 'src' => $image['src'] ?? null],
                     $product['images'] ?? []
@@ -796,6 +814,8 @@ class BasalamSync
                 'default_package_weight' => getSetting('basalam_default_package_weight', '0'),
                 'unmanaged_stock' => getSetting('basalam_unmanaged_stock', '1'),
                 'sync_images' => getSetting('basalam_sync_images', '1'),
+                'sync_attributes' => getSetting('basalam_sync_attributes', '1'),
+                'attribute_sync_version' => '1',
             ],
         ];
 
