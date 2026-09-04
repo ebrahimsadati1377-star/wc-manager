@@ -31,7 +31,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Print category mappings and usage
+      - name: Print category mappings and mapped-product usage
         shell: bash
         run: |
           set -euo pipefail
@@ -41,44 +41,60 @@ jobs:
           require_once 'includes/bootstrap.php';
           $wc = new WooCommerceClient();
           $db = Database::get();
+
           $maps = $db->query('SELECT * FROM basalam_category_map ORDER BY wc_category_id')->fetchAll();
+          $mappedRows = $db->query('SELECT wc_product_id FROM basalam_product_map WHERE basalam_product_id IS NOT NULL')->fetchAll();
+          $mappedIds = [];
+          foreach ($mappedRows as $r) $mappedIds[(int)$r['wc_product_id']] = true;
+
           $cats = [];
           for ($page=1; $page<=10; $page++) {
               $res = $wc->getCategories(['page'=>$page,'per_page'=>100,'hide_empty'=>'false']);
               if ($res['error']) { echo 'WC_CATEGORY_ERROR=' . $res['error'] . PHP_EOL; break; }
               $batch = is_array($res['body'] ?? null) ? $res['body'] : [];
-              foreach ($batch as $cat) {
-                  if (!is_array($cat)) continue;
-                  $cats[(int)($cat['id'] ?? 0)] = $cat;
+              foreach ($batch as $cat) if (is_array($cat)) $cats[(int)($cat['id'] ?? 0)] = $cat;
+              $pages = max(1, (int)($res['headers']['total_pages'] ?? 1));
+              if ($page >= $pages || count($batch) < 100) break;
+          }
+
+          // Load the Woo catalog once instead of re-fetching every product for every map.
+          $usage = [];
+          $productSamples = [];
+          for ($page=1; $page<=10; $page++) {
+              $res = $wc->getProducts(['page'=>$page,'per_page'=>100,'orderby'=>'id','order'=>'asc']);
+              if ($res['error']) { echo 'WC_PRODUCTS_ERROR=' . $res['error'] . PHP_EOL; break; }
+              $batch = is_array($res['body'] ?? null) ? $res['body'] : [];
+              foreach ($batch as $product) {
+                  if (!is_array($product)) continue;
+                  $pid = (int)($product['id'] ?? 0);
+                  if ($pid <= 0 || !isset($mappedIds[$pid])) continue;
+                  foreach ((array)($product['categories'] ?? []) as $pc) {
+                      $cid = (int)($pc['id'] ?? 0);
+                      if ($cid <= 0) continue;
+                      $usage[$cid] = ($usage[$cid] ?? 0) + 1;
+                      if (count($productSamples[$cid] ?? []) < 10) {
+                          $productSamples[$cid][] = [
+                              'id'=>$pid,
+                              'name'=>(string)($product['name'] ?? '')
+                          ];
+                      }
+                  }
               }
               $pages = max(1, (int)($res['headers']['total_pages'] ?? 1));
               if ($page >= $pages || count($batch) < 100) break;
           }
+
           foreach ($maps as $map) {
               $wcId = (int)$map['wc_category_id'];
               $cat = $cats[$wcId] ?? [];
-              $countStmt = $db->prepare('SELECT COUNT(*) FROM basalam_product_map bpm WHERE bpm.basalam_product_id IS NOT NULL');
-              // Count mapped Woo products using this Woo category by reading products, below.
-              $used = [];
-              $rows = $db->query('SELECT wc_product_id FROM basalam_product_map WHERE basalam_product_id IS NOT NULL')->fetchAll();
-              foreach ($rows as $r) {
-                  $p = $wc->getProduct((int)$r['wc_product_id']);
-                  if ($p['error']) continue;
-                  foreach ((array)($p['body']['categories'] ?? []) as $pc) {
-                      if ((int)($pc['id'] ?? 0) === $wcId) {
-                          $used[] = (int)$r['wc_product_id'];
-                          break;
-                      }
-                  }
-              }
               echo 'MAP=' . json_encode([
                   'wc_category_id'=>$wcId,
                   'wc_category_name'=>(string)($cat['name'] ?? ''),
                   'wc_parent_id'=>(int)($cat['parent'] ?? 0),
                   'basalam_category_id'=>(int)$map['basalam_category_id'],
                   'basalam_category_name'=>(string)($map['basalam_category_name'] ?? ''),
-                  'mapped_product_count'=>count($used),
-                  'sample_woo_ids'=>array_slice($used,0,10),
+                  'mapped_product_count'=>(int)($usage[$wcId] ?? 0),
+                  'samples'=>$productSamples[$wcId] ?? [],
               ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
           }
           PHP
