@@ -534,6 +534,28 @@ class BasalamSync
     {
         $maxImages = min(10, max(1, (int)getSetting('basalam_max_images', '6')));
         $ids = [];
+        $safeCropTopPercent = 0;
+
+        // Once a product has been remediated for Basalam image moderation, keep
+        // using the safe Basalam-only crop on future force-syncs. Woo originals
+        // remain untouched and the policy can be reset by removing the job row.
+        $wcProductId = (int)($product['id'] ?? 0);
+        if ($wcProductId > 0) {
+            try {
+                $stmt = $this->db->prepare(
+                    "SELECT crop_top_percent FROM basalam_safe_image_jobs
+                     WHERE wc_product_id = :id AND last_status = 'submitted' LIMIT 1"
+                );
+                $stmt->execute(['id' => $wcProductId]);
+                $safeJob = $stmt->fetch();
+                if (is_array($safeJob)) {
+                    $safeCropTopPercent = max(15, min(40, (int)($safeJob['crop_top_percent'] ?? 28)));
+                }
+            } catch (Throwable $e) {
+                // Table may not exist yet on older installs; fall back to normal images.
+                $safeCropTopPercent = 0;
+            }
+        }
 
         foreach (array_slice($product['images'] ?? [], 0, $maxImages) as $image) {
             $url = trim((string)($image['src'] ?? ''));
@@ -541,7 +563,9 @@ class BasalamSync
                 continue;
             }
 
-            $upload = BasalamImageProcessor::upload($this->basalam, $url);
+            $upload = $safeCropTopPercent > 0
+                ? BasalamSafeImageProcessor::upload($this->basalam, $url, $safeCropTopPercent)
+                : BasalamImageProcessor::upload($this->basalam, $url);
             if ($upload['error']) {
                 $warnings[] = 'آپلود یک تصویر ناموفق بود: ' . $upload['error'];
                 continue;
