@@ -358,16 +358,16 @@ class BasalamSync
         }
 
         $weight = (float)($product['weight'] ?? 0);
+        $defaultPackageWeight = max(0, (int)getSetting('basalam_default_package_weight', '0'));
         if ($weight > 0) {
             $weightInBasalamUnit = max(1, (int)round($weight * $weightMultiplier));
             $payload['weight'] = $weightInBasalamUnit;
-            $defaultPackageWeight = max(0, (int)getSetting('basalam_default_package_weight', '0'));
             $payload['package_weight'] = max($weightInBasalamUnit, $defaultPackageWeight);
-        } else {
-            $defaultPackageWeight = max(0, (int)getSetting('basalam_default_package_weight', '0'));
-            if ($defaultPackageWeight > 0) {
-                $payload['package_weight'] = $defaultPackageWeight;
-            }
+        } elseif ($defaultPackageWeight > 0) {
+            // Basalam requires product weight (or decimal_weight) in addition to package weight.
+            // If Woo has no weight, use the configured default as a conservative fallback.
+            $payload['weight'] = $defaultPackageWeight;
+            $payload['package_weight'] = $defaultPackageWeight;
         }
 
         if (($product['type'] ?? 'simple') === 'variable') {
