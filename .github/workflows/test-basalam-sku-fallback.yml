@@ -36,5 +36,5 @@ jobs:
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
-          php -l tools/pilot-migrate-basalam-1056.php
-          base64 -w0 tools/pilot-migrate-basalam-1056.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
+          php -l tools/pilot-migrate-basalam-1056-v2.php
+          base64 -w0 tools/pilot-migrate-basalam-1056-v2.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
