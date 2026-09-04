@@ -1,0 +1,53 @@
+name: Retry Basalam safe image 1857
+on:
+  push:
+    branches: [ops/retry-safe-image-1857]
+    paths:
+      - '.github/workflows/retry-safe-image-1857.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Retry with stronger crop
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/retry-safe-1857.php <<'PHP'
+          <?php
+          $root = rtrim((string)($argv[1] ?? ''), '/');
+          require $root . '/includes/bootstrap.php';
+          $service = new BasalamSafeImageService();
+          $result = $service->prepareAndSubmit(1857, 36);
+          echo json_encode([
+              'success' => (bool)($result['success'] ?? false),
+              'message' => (string)($result['message'] ?? ''),
+              'wc' => (int)($result['wc_product_id'] ?? 0),
+              'basalam' => (int)($result['basalam_product_id'] ?? 0),
+              'images' => (int)($result['image_count'] ?? 0),
+              'warnings' => (array)($result['warnings'] ?? []),
+              'before' => $result['moderation_before']['status'] ?? null,
+              'after' => $result['moderation_after']['status'] ?? null,
+          ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (empty($result['success'])) exit(2);
+          PHP
+          scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/retry-safe-1857.php "$DEPLOY_USER@$DEPLOY_HOST:/tmp/retry-safe-1857.php"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "php /tmp/retry-safe-1857.php '$DEPLOY_PATH'; rc=\$?; rm -f /tmp/retry-safe-1857.php; exit \$rc"
