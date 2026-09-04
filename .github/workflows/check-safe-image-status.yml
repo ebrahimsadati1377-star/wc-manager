@@ -1,4 +1,4 @@
-name: Retry remaining Basalam image rejections
+name: Inspect generic Basalam image rejection reasons
 on:
   push:
     branches: [ops/check-safe-image-status]
@@ -12,9 +12,8 @@ env:
   DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 jobs:
-  retry:
+  inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
       - name: Configure SSH
         env:
@@ -27,56 +26,38 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Retry current image rejections
+      - name: Inspect rejection payloads
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
-          cat > /tmp/retry-safe-current.php <<'PHP'
+          cat > /tmp/inspect-generic-image.php <<'PHP'
           <?php
           $root = rtrim((string)($argv[1] ?? ''), '/');
           require $root . '/includes/bootstrap.php';
-          $service = new BasalamSafeImageService();
           $client = new BasalamClient();
-          $db = Database::get();
-          $rows = $db->query("SELECT wc_product_id, basalam_product_id FROM basalam_safe_image_jobs WHERE last_status='submitted' ORDER BY wc_product_id")->fetchAll();
+          $targets = [57674352,57616625,57616575,57614412,57614404,57614384,57616704];
           $out = [];
-          foreach ($rows as $row) {
-              $wc = (int)$row['wc_product_id'];
-              $bid = (int)$row['basalam_product_id'];
+          foreach ($targets as $bid) {
               $r = $client->getProduct($bid, true);
               $b = is_array($r['body'] ?? null) ? $r['body'] : [];
               $status = $b['status'] ?? null;
-              $value = is_array($status) ? (int)($status['value'] ?? 0) : (is_numeric($status) ? (int)$status : 0);
-              if ($value !== 3567) continue;
               $revision = is_array($b['revision'] ?? null) ? $b['revision'] : [];
               $meta = is_array($revision['metadata'] ?? null) ? $revision['metadata'] : [];
-              $illegal = is_array($meta['illegal_photos'] ?? null) ? $meta['illegal_photos'] : [];
-              if (!$illegal) {
-                  $out[] = [
-                      'woo'=>$wc,
-                      'basalam'=>$bid,
-                      'result'=>'not_image_retry',
-                      'revision_rejection_reasons'=>$revision['rejection_reasons'] ?? ($revision['rejection_reason'] ?? null),
-                      'product_rejection_reasons'=>$b['rejection_reasons'] ?? ($b['rejection_reason'] ?? ($b['reject_reason'] ?? null)),
-                      'metadata_description'=>$meta['description'] ?? null,
-                  ];
-                  continue;
-              }
-              $result = $service->prepareAndSubmit($wc, 36);
               $out[] = [
-                  'woo'=>$wc,
                   'basalam'=>$bid,
-                  'result'=>!empty($result['success'])?'resubmitted':'failed',
-                  'images'=>(int)($result['image_count'] ?? 0),
-                  'message'=>(string)($result['message'] ?? ''),
-                  'after'=>$result['moderation_after']['status'] ?? null,
-                  'warnings'=>(array)($result['warnings'] ?? []),
+                  'name'=>(string)($b['name'] ?? $b['title'] ?? ''),
+                  'status'=>$status,
+                  'revision_rejection_reasons'=>$revision['rejection_reasons'] ?? null,
+                  'revision_rejection_reason'=>$revision['rejection_reason'] ?? null,
+                  'product_rejection_reasons'=>$b['rejection_reasons'] ?? null,
+                  'product_rejection_reason'=>$b['rejection_reason'] ?? null,
+                  'reject_reason'=>$b['reject_reason'] ?? null,
+                  'illegal_count'=>is_array($meta['illegal_photos'] ?? null)?count($meta['illegal_photos']):0,
+                  'metadata_description'=>$meta['description'] ?? null,
               ];
-              echo 'PROGRESS ' . json_encode(end($out), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              flush();
           }
-          echo 'SUMMARY ' . json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
           PHP
-          scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/retry-safe-current.php "$DEPLOY_USER@$DEPLOY_HOST:/tmp/retry-safe-current.php"
-          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 "$DEPLOY_USER@$DEPLOY_HOST" \
-            "php /tmp/retry-safe-current.php '$DEPLOY_PATH'; rc=\$?; rm -f /tmp/retry-safe-current.php; exit \$rc"
+          scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/inspect-generic-image.php "$DEPLOY_USER@$DEPLOY_HOST:/tmp/inspect-generic-image.php"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "php /tmp/inspect-generic-image.php '$DEPLOY_PATH'; rc=\$?; rm -f /tmp/inspect-generic-image.php; exit \$rc"
