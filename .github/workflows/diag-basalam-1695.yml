@@ -1,0 +1,74 @@
+name: Diagnose Basalam Woo 1695
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/diag-basalam-1695.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect Woo and Basalam variants
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+          $vr = $wc->getVariations(1695, ['per_page' => 100]);
+          $pr = $client->getProduct(57616704, true);
+          $ref = new ReflectionMethod(BasalamSync::class, 'getVariationMapsByProduct');
+          $ref->setAccessible(true);
+          $maps = $ref->invoke($sync, 1695);
+          $woo = [];
+          foreach ((array)($vr['body'] ?? []) as $v) {
+              $woo[] = [
+                  'id'=>$v['id']??null,
+                  'sku'=>$v['sku']??null,
+                  'price'=>$v['price']??null,
+                  'stock'=>$v['stock_quantity']??null,
+                  'attributes'=>$v['attributes']??[],
+              ];
+          }
+          $bv = [];
+          foreach ((array)($pr['body']['variants'] ?? []) as $v) {
+              $bv[] = [
+                  'id'=>$v['id']??null,
+                  'sku'=>$v['sku']??null,
+                  'primary_price'=>$v['primary_price']??null,
+                  'stock'=>$v['stock']??null,
+                  'properties'=>$v['properties']??[],
+                  'title'=>$v['title']??($v['name']??null),
+              ];
+          }
+          echo 'WOO_VARIANTS=' . json_encode($woo, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo 'BASALAM_VARIANTS=' . json_encode($bv, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo 'MAPS=' . json_encode($maps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo 'BASALAM_ERROR=' . ($pr['error'] ?? '') . PHP_EOL;
+          PHP
