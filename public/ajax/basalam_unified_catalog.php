@@ -4,7 +4,7 @@ Auth::requireLogin();
 header('Content-Type: application/json; charset=utf-8');
 
 $scope = trim((string)($_POST['scope'] ?? 'stats'));
-$allowedScopes = ['stats','linked','candidate','basalam_only','rejected','pending','unpublished','all_basalam'];
+$allowedScopes = ['stats','linked','candidate','basalam_only','rejected','pending','unpublished','all_basalam','image_issue','category_issue'];
 if (!in_array($scope, $allowedScopes, true)) {
     jsonResponse(['success' => false, 'message' => 'فیلتر نامعتبر است.'], 422);
 }
@@ -97,7 +97,7 @@ try {
         if ($title !== '') $wooByTitle[$title][] = $wooId;
     }
 
-    $stats = ['total'=>count($basalamProducts),'linked'=>0,'candidate'=>0,'basalam_only'=>0,'rejected'=>0,'pending'=>0,'unpublished'=>0,'available'=>0];
+    $stats = ['total'=>count($basalamProducts),'linked'=>0,'candidate'=>0,'basalam_only'=>0,'rejected'=>0,'pending'=>0,'unpublished'=>0,'inactive'=>0,'available'=>0];
     $items = [];
 
     foreach ($basalamProducts as $id => $product) {
@@ -131,6 +131,32 @@ try {
             }
         }
 
+        $imageIssue = false;
+        $categoryIssue = false;
+        if (in_array($scope, ['image_issue','category_issue'], true) && $market['key'] === 'rejected') {
+            $detailRes = $basalam->getProduct($id, true);
+            if (!$detailRes['error']) {
+                $full = is_array($detailRes['body'] ?? null) ? $detailRes['body'] : [];
+                $revision = is_array($full['revision'] ?? null) ? $full['revision'] : [];
+                $metadata = is_array($revision['metadata'] ?? null) ? $revision['metadata'] : [];
+                $issueText = json_encode([
+                    $metadata,
+                    $revision['rejection_reasons'] ?? null,
+                    $revision['rejection_reason'] ?? null,
+                    $full['rejection_reasons'] ?? null,
+                    $full['rejection_reason'] ?? null,
+                    $full['reject_reason'] ?? null,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+                $imageIssue = !empty($metadata['illegal_photos']);
+                foreach (['تصویر','عکس','photo','حجاب','مو','چهره','پوشش','فیلتر','5031'] as $needle) {
+                    if ($contains($issueText, $needle)) { $imageIssue = true; break; }
+                }
+                foreach (['دسته','category','6046'] as $needle) {
+                    if ($contains($issueText, $needle)) { $categoryIssue = true; break; }
+                }
+            }
+        }
+
         $matchesScope = match ($scope) {
             'stats' => false,
             'linked' => $relation['key'] === 'linked',
@@ -140,6 +166,8 @@ try {
             'pending' => $market['key'] === 'pending',
             'unpublished' => $market['key'] === 'unpublished',
             'all_basalam' => true,
+            'image_issue' => $imageIssue,
+            'category_issue' => $categoryIssue,
             default => false,
         };
         if (!$matchesScope) continue;
