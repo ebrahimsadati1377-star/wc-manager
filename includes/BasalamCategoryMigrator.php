@@ -228,18 +228,42 @@ class BasalamCategoryMigrator
             }
             $legacyPrepared = true;
 
-            $verify = $this->basalam->getProduct($oldId, true);
-            if ($verify['error']) throw new RuntimeException('تأیید محصول قدیمی ناموفق بود: ' . $verify['error']);
-            $verifyBody = (array)$verify['body'];
-            $verifyTitle = (string)($verifyBody['name'] ?? $verifyBody['title'] ?? '');
-            $verifyStatus = (int)($verifyBody['status']['value'] ?? $verifyBody['status'] ?? 0);
-            if ($verifyStatus !== 3790 || $this->normalizeTitle($verifyTitle) === $this->normalizeTitle($wooTitle)) {
-                throw new RuntimeException('محصول قدیمی به حالت امن منتقل نشد؛ ساخت محصول جدید متوقف شد.');
-            }
-            foreach ((array)($verifyBody['variants'] ?? $verifyBody['variant'] ?? []) as $variant) {
-                if (trim((string)($variant['sku'] ?? '')) !== '') {
-                    throw new RuntimeException('SKU یکی از variationهای قدیمی آزاد نشد.');
+            // Basalam product updates can be eventually consistent. Poll the full product
+            // until the legacy title/status/SKUs are visibly safe before creating a replacement.
+            $verifyBody = [];
+            $legacySafe = false;
+            $verifyError = null;
+            for ($attempt = 0; $attempt < 8; $attempt++) {
+                if ($attempt > 0) usleep(750000);
+                $verify = $this->basalam->getProduct($oldId, true);
+                if ($verify['error']) {
+                    $verifyError = $verify['error'];
+                    continue;
                 }
+                $verifyBody = (array)$verify['body'];
+                $verifyTitle = (string)($verifyBody['name'] ?? $verifyBody['title'] ?? '');
+                $verifyStatus = (int)($verifyBody['status']['value'] ?? $verifyBody['status'] ?? 0);
+                $parentSkuReleased = trim((string)($verifyBody['sku'] ?? '')) === '';
+                $variantSkusReleased = true;
+                foreach ((array)($verifyBody['variants'] ?? $verifyBody['variant'] ?? []) as $variant) {
+                    if (trim((string)($variant['sku'] ?? '')) !== '') {
+                        $variantSkusReleased = false;
+                        break;
+                    }
+                }
+                if (
+                    $verifyStatus === 3790
+                    && $this->normalizeTitle($verifyTitle) !== $this->normalizeTitle($wooTitle)
+                    && $parentSkuReleased
+                    && $variantSkusReleased
+                ) {
+                    $legacySafe = true;
+                    break;
+                }
+            }
+            if (!$legacySafe) {
+                $suffix = $verifyError ? ' آخرین خطا: ' . $verifyError : '';
+                throw new RuntimeException('محصول قدیمی به حالت امن منتقل نشد؛ ساخت محصول جدید متوقف شد.' . $suffix);
             }
 
             $payload = $this->buildCreatePayload($product, $variations, $expectedId);
