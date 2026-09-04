@@ -1,14 +1,12 @@
-name: Apply Basalam variation matching fix
-
+name: Apply Basalam Variation Match Fix
 on:
   push:
-    branches: [codex/basalam-existing-variation-match]
+    branches:
+      - codex/basalam-existing-variation-match
     paths:
-      - '.github/workflows/apply-basalam-variation-match-fix.yml'
-
+      - .github/workflows/apply-basalam-variation-match-fix.yml
 permissions:
   contents: write
-
 jobs:
   patch:
     runs-on: ubuntu-latest
@@ -16,168 +14,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: codex/basalam-existing-variation-match
-      - name: Patch variation matching
-        shell: bash
+      - name: Patch and lint
+        env:
+          PATCH_SCRIPT_B64: CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApwID0gUGF0aCgiaW5jbHVkZXMvQmFzYWxhbVN5bmMucGhwIikKcyA9IHAucmVhZF90ZXh0KCkKCm9sZCA9ICIiIiAgICAgICAgJGV4aXN0aW5nTWFwcyA9ICR0aGlzLT5nZXRWYXJpYXRpb25NYXBzQnlQcm9kdWN0KCR3Y1Byb2R1Y3RJZCk7CiAgICAgICAgJHVzZWQgPSBbXTsKCiAgICAgICAgZm9yZWFjaCAoJHdvb1ZhcmlhdGlvbnMgYXMgJHdvb1ZhcmlhdGlvbikgewoiIiIKbmV3ID0gIiIiICAgICAgICAkZXhpc3RpbmdNYXBzID0gJHRoaXMtPmdldFZhcmlhdGlvbk1hcHNCeVByb2R1Y3QoJHdjUHJvZHVjdElkKTsKICAgICAgICAkdXNlZCA9IFtdOwoKICAgICAgICAvLyBSZXNlcnZlIEJhc2FsYW0gdmFyaWFudHMgdGhhdCBhcmUgYWxyZWFkeSBtYXBwZWQgc28gYSBuZXcvdW5tYXBwZWQgV29vCiAgICAgICAgLy8gdmFyaWF0aW9uIGNhbiBuZXZlciBiZSBhdHRhY2hlZCB0byBhbiBleGlzdGluZyBtYXBwaW5nIGJ5IG1pc3Rha2UuCiAgICAgICAgZm9yZWFjaCAoJGV4aXN0aW5nTWFwcyBhcyAkZXhpc3RpbmdNYXApIHsKICAgICAgICAgICAgJG1hcHBlZFZhcmlhdGlvbklkID0gKGludCkoJGV4aXN0aW5nTWFwWydiYXNhbGFtX3ZhcmlhdGlvbl9pZCddID8/IDApOwogICAgICAgICAgICBpZiAoJG1hcHBlZFZhcmlhdGlvbklkIDw9IDApIHsKICAgICAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgICAgICB9CiAgICAgICAgICAgIGZvcmVhY2ggKCRiYXNhbGFtVmFyaWFudHMgYXMgJGluZGV4ID0+ICR2YXJpYW50KSB7CiAgICAgICAgICAgICAgICBpZiAoKGludCkoJHZhcmlhbnRbJ2lkJ10gPz8gMCkgPT09ICRtYXBwZWRWYXJpYXRpb25JZCkgewogICAgICAgICAgICAgICAgICAgICR1c2VkWyRpbmRleF0gPSB0cnVlOwogICAgICAgICAgICAgICAgICAgIGJyZWFrOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgfQoKICAgICAgICAvLyBBIGR1cGxpY2F0ZWQgV29vIHZhcmlhdGlvbiBTS1UgaXMgbm90IGEgc2FmZSBpZGVudGlmaWVyIGFuZCBzaG91bGQgbm90CiAgICAgICAgLy8gYmUgcHVzaGVkIHRvIGV2ZXJ5IEJhc2FsYW0gdmFyaWF0aW9uLgogICAgICAgICRza3VDb3VudHMgPSBbXTsKICAgICAgICBmb3JlYWNoICgkd29vVmFyaWF0aW9ucyBhcyAkdmFyaWF0aW9uKSB7CiAgICAgICAgICAgICR2YXJpYXRpb25Ta3UgPSB0cmltKChzdHJpbmcpKCR2YXJpYXRpb25bJ3NrdSddID8/ICcnKSk7CiAgICAgICAgICAgIGlmICgkdmFyaWF0aW9uU2t1ICE9PSAnJykgewogICAgICAgICAgICAgICAgJHNrdUNvdW50c1skdmFyaWF0aW9uU2t1XSA9ICgkc2t1Q291bnRzWyR2YXJpYXRpb25Ta3VdID8/IDApICsgMTsKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgZm9yZWFjaCAoJHdvb1ZhcmlhdGlvbnMgYXMgJHdvb1ZhcmlhdGlvbikgewoiIiIKaWYgb2xkIG5vdCBpbiBzOgogICAgcmFpc2UgU3lzdGVtRXhpdCgic3luY0V4aXN0aW5nVmFyaWF0aW9ucyBoZWFkZXIgdGFyZ2V0IG5vdCBmb3VuZCIpCnMgPSBzLnJlcGxhY2Uob2xkLCBuZXcsIDEpCgpvbGQgPSAiIiIgICAgICAgICAgICAkc2t1ID0gdHJpbSgoc3RyaW5nKSgkd29vVmFyaWF0aW9uWydza3UnXSA/PyAnJykpOwogICAgICAgICAgICBpZiAoJHNrdSAhPT0gJycpIHsKICAgICAgICAgICAgICAgICR1cGRhdGVbJ3NrdSddID0gJHNrdTsKICAgICAgICAgICAgfQoiIiIKbmV3ID0gIiIiICAgICAgICAgICAgJHNrdSA9IHRyaW0oKHN0cmluZykoJHdvb1ZhcmlhdGlvblsnc2t1J10gPz8gJycpKTsKICAgICAgICAgICAgaWYgKCRza3UgIT09ICcnICYmICgkc2t1Q291bnRzWyRza3VdID8/IDApID09PSAxKSB7CiAgICAgICAgICAgICAgICAkdXBkYXRlWydza3UnXSA9ICRza3U7CiAgICAgICAgICAgIH0KIiIiCmlmIG9sZCBub3QgaW4gczoKICAgIHJhaXNlIFN5c3RlbUV4aXQoInZhcmlhdGlvbiBza3UgdGFyZ2V0IG5vdCBmb3VuZCIpCnMgPSBzLnJlcGxhY2Uob2xkLCBuZXcsIDEpCgpzdGFydCA9IHMuaW5kZXgoIiAgICBwcml2YXRlIGZ1bmN0aW9uIGZpbmRWYXJpYW50TWF0Y2hJbmRleCgiKQplbmQgPSBzLmluZGV4KCIgICAgcHJpdmF0ZSBmdW5jdGlvbiB3b29WYXJpYXRpb25TaWduYXR1cmUoIiwgc3RhcnQpCnJlcGxhY2VtZW50ID0gIiIiICAgIHByaXZhdGUgZnVuY3Rpb24gZmluZFZhcmlhbnRNYXRjaEluZGV4KGFycmF5ICR3b29WYXJpYXRpb24sIGFycmF5ICRiYXNhbGFtVmFyaWFudHMsIGFycmF5ICR1c2VkKTogP2ludAogICAgewogICAgICAgIC8vIEF0dHJpYnV0ZS9wcm9wZXJ0eSBzaWduYXR1cmVzIGFyZSBtb3JlIHNwZWNpZmljIHRoYW4gU0tVIGFuZCBtdXN0IGJlCiAgICAgICAgLy8gcHJlZmVycmVkLiBFeGlzdGluZyBjYXRhbG9ncyBvZnRlbiByZXVzZSBhIHBhcmVudCBTS1UgYWNyb3NzIGNvbG9ycy4KICAgICAgICAkd29vU2lnbmF0dXJlID0gJHRoaXMtPndvb1ZhcmlhdGlvblNpZ25hdHVyZSgkd29vVmFyaWF0aW9uKTsKICAgICAgICBpZiAoJHdvb1NpZ25hdHVyZSAhPT0gJycpIHsKICAgICAgICAgICAgJHNpZ25hdHVyZU1hdGNoZXMgPSBbXTsKICAgICAgICAgICAgZm9yZWFjaCAoJGJhc2FsYW1WYXJpYW50cyBhcyAkaW5kZXggPT4gJHZhcmlhbnQpIHsKICAgICAgICAgICAgICAgIGlmICghZW1wdHkoJHVzZWRbJGluZGV4XSkpIHsKICAgICAgICAgICAgICAgICAgICBjb250aW51ZTsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIGlmICgkd29vU2lnbmF0dXJlID09PSAkdGhpcy0+YmFzYWxhbVZhcmlhdGlvblNpZ25hdHVyZSgoYXJyYXkpJHZhcmlhbnQpKSB7CiAgICAgICAgICAgICAgICAgICAgJHNpZ25hdHVyZU1hdGNoZXNbXSA9IChpbnQpJGluZGV4OwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgICAgIGlmIChjb3VudCgkc2lnbmF0dXJlTWF0Y2hlcykgPT09IDEpIHsKICAgICAgICAgICAgICAgIHJldHVybiAkc2lnbmF0dXJlTWF0Y2hlc1swXTsKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgJHdvb1NrdSA9IHRyaW0oKHN0cmluZykoJHdvb1ZhcmlhdGlvblsnc2t1J10gPz8gJycpKTsKICAgICAgICBpZiAoJHdvb1NrdSAhPT0gJycpIHsKICAgICAgICAgICAgJHNrdU1hdGNoZXMgPSBbXTsKICAgICAgICAgICAgZm9yZWFjaCAoJGJhc2FsYW1WYXJpYW50cyBhcyAkaW5kZXggPT4gJHZhcmlhbnQpIHsKICAgICAgICAgICAgICAgIGlmICghZW1wdHkoJHVzZWRbJGluZGV4XSkpIHsKICAgICAgICAgICAgICAgICAgICBjb250aW51ZTsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIGlmICgkd29vU2t1ID09PSB0cmltKChzdHJpbmcpKCR2YXJpYW50Wydza3UnXSA/PyAnJykpKSB7CiAgICAgICAgICAgICAgICAgICAgJHNrdU1hdGNoZXNbXSA9IChpbnQpJGluZGV4OwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgICAgIGlmIChjb3VudCgkc2t1TWF0Y2hlcykgPT09IDEpIHsKICAgICAgICAgICAgICAgIHJldHVybiAkc2t1TWF0Y2hlc1swXTsKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgLy8gU29tZSBsZWdhY3kgV29vIHByb2R1Y3RzIGhhdmUgb25lIHZhcmlhdGlvbiB3aXRoIG5vIGF0dHJpYnV0ZXMsIHdoaWxlCiAgICAgICAgLy8gdGhlIGFscmVhZHktZXhpc3RpbmcgQmFzYWxhbSBwcm9kdWN0IGFsc28gaGFzIG9uZSBibGFuay1wcm9wZXJ0eQogICAgICAgIC8vIHZhcmlhdGlvbi4gQSB1bmlxdWUgYmxhbmstdG8tYmxhbmsgbWF0Y2ggaXMgZGV0ZXJtaW5pc3RpYyBhbmQgc2FmZS4KICAgICAgICBpZiAoJHdvb1NpZ25hdHVyZSA9PT0gJycpIHsKICAgICAgICAgICAgJGJsYW5rTWF0Y2hlcyA9IFtdOwogICAgICAgICAgICBmb3JlYWNoICgkYmFzYWxhbVZhcmlhbnRzIGFzICRpbmRleCA9PiAkdmFyaWFudCkgewogICAgICAgICAgICAgICAgaWYgKCFlbXB0eSgkdXNlZFskaW5kZXhdKSkgewogICAgICAgICAgICAgICAgICAgIGNvbnRpbnVlOwogICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgaWYgKCR0aGlzLT5iYXNhbGFtVmFyaWF0aW9uU2lnbmF0dXJlKChhcnJheSkkdmFyaWFudCkgPT09ICcnKSB7CiAgICAgICAgICAgICAgICAgICAgJGJsYW5rTWF0Y2hlc1tdID0gKGludCkkaW5kZXg7CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgaWYgKGNvdW50KCRibGFua01hdGNoZXMpID09PSAxKSB7CiAgICAgICAgICAgICAgICByZXR1cm4gJGJsYW5rTWF0Y2hlc1swXTsKICAgICAgICAgICAgfQogICAgICAgIH0KCiAgICAgICAgcmV0dXJuIG51bGw7CiAgICB9CgoiIiIKcyA9IHNbOnN0YXJ0XSArIHJlcGxhY2VtZW50ICsgc1tlbmQ6XQoKc3RhcnQgPSBzLmluZGV4KCIgICAgcHJpdmF0ZSBmdW5jdGlvbiBiYXNhbGFtVmFyaWF0aW9uU2lnbmF0dXJlKCIpCmVuZCA9IHMuaW5kZXgoIiAgICBwcml2YXRlIGZ1bmN0aW9uIHNhdmVQcm9kdWN0TWFwKCIsIHN0YXJ0KQpyZXBsYWNlbWVudCA9ICIiIiAgICBwcml2YXRlIGZ1bmN0aW9uIGJhc2FsYW1WYXJpYXRpb25TaWduYXR1cmUoYXJyYXkgJHZhcmlhdGlvbik6IHN0cmluZwogICAgewogICAgICAgICRwYXJ0cyA9IFtdOwogICAgICAgIGZvcmVhY2ggKCgkdmFyaWF0aW9uWydwcm9wZXJ0aWVzJ10gPz8gW10pIGFzICRwcm9wZXJ0eSkgewogICAgICAgICAgICAkcmF3TmFtZSA9ICRwcm9wZXJ0eVsncHJvcGVydHknXSA/PyAnJzsKICAgICAgICAgICAgaWYgKGlzX2FycmF5KCRyYXdOYW1lKSkgewogICAgICAgICAgICAgICAgJHJhd05hbWUgPSAkcmF3TmFtZVsndGl0bGUnXSA/PyAkcmF3TmFtZVsnbmFtZSddID8/ICRyYXdOYW1lWyd2YWx1ZSddID8/ICcnOwogICAgICAgICAgICB9CgogICAgICAgICAgICAkcmF3VmFsdWUgPSAkcHJvcGVydHlbJ3ZhbHVlJ10gPz8gJyc7CiAgICAgICAgICAgIGlmIChpc19hcnJheSgkcmF3VmFsdWUpKSB7CiAgICAgICAgICAgICAgICAkcmF3VmFsdWUgPSAkcmF3VmFsdWVbJ3ZhbHVlJ10gPz8gJHJhd1ZhbHVlWyd0aXRsZSddID8/ICRyYXdWYWx1ZVsnbmFtZSddID8/ICcnOwogICAgICAgICAgICB9CgogICAgICAgICAgICAkbmFtZSA9ICR0aGlzLT5ub3JtYWxpemVUZXh0KChzdHJpbmcpJHJhd05hbWUpOwogICAgICAgICAgICAkdmFsdWUgPSAkdGhpcy0+bm9ybWFsaXplVGV4dCgoc3RyaW5nKSRyYXdWYWx1ZSk7CiAgICAgICAgICAgIGlmICgkbmFtZSAhPT0gJycgJiYgJHZhbHVlICE9PSAnJykgewogICAgICAgICAgICAgICAgJHBhcnRzW10gPSAkbmFtZSAuICc9JyAuICR2YWx1ZTsKICAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBzb3J0KCRwYXJ0cywgU09SVF9TVFJJTkcpOwogICAgICAgIHJldHVybiBpbXBsb2RlKCd8JywgJHBhcnRzKTsKICAgIH0KCiIiIgpzID0gc1s6c3RhcnRdICsgcmVwbGFjZW1lbnQgKyBzW2VuZDpdCnAud3JpdGVfdGV4dChzKQo=
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('includes/BasalamSync.php')
-          s = p.read_text()
-
-          old = '''        $existingMaps = $this->getVariationMapsByProduct($wcProductId);
-        $used = [];
-
-        foreach ($wooVariations as $wooVariation) {
-'''
-          new = '''        $existingMaps = $this->getVariationMapsByProduct($wcProductId);
-        $used = [];
-
-        // Reserve Basalam variants that are already mapped so a new/unmapped Woo
-        // variation can never be attached to an existing mapping by mistake.
-        foreach ($existingMaps as $existingMap) {
-            $mappedVariationId = (int)($existingMap['basalam_variation_id'] ?? 0);
-            if ($mappedVariationId <= 0) {
-                continue;
-            }
-            foreach ($basalamVariants as $index => $variant) {
-                if ((int)($variant['id'] ?? 0) === $mappedVariationId) {
-                    $used[$index] = true;
-                    break;
-                }
-            }
-        }
-
-        // A duplicated Woo variation SKU is not a safe identifier and should not
-        // be pushed to every Basalam variation.
-        $skuCounts = [];
-        foreach ($wooVariations as $variation) {
-            $variationSku = trim((string)($variation['sku'] ?? ''));
-            if ($variationSku !== '') {
-                $skuCounts[$variationSku] = ($skuCounts[$variationSku] ?? 0) + 1;
-            }
-        }
-
-        foreach ($wooVariations as $wooVariation) {
-'''
-          if old not in s:
-              raise SystemExit('syncExistingVariations header target not found')
-          s = s.replace(old, new, 1)
-
-          old = '''            $sku = trim((string)($wooVariation['sku'] ?? ''));
-            if ($sku !== '') {
-                $update['sku'] = $sku;
-            }
-'''
-          new = '''            $sku = trim((string)($wooVariation['sku'] ?? ''));
-            if ($sku !== '' && ($skuCounts[$sku] ?? 0) === 1) {
-                $update['sku'] = $sku;
-            }
-'''
-          if old not in s:
-              raise SystemExit('variation sku target not found')
-          s = s.replace(old, new, 1)
-
-          start = s.index('    private function findVariantMatchIndex(')
-          end = s.index('    private function wooVariationSignature(', start)
-          replacement = '''    private function findVariantMatchIndex(array $wooVariation, array $basalamVariants, array $used): ?int
-    {
-        // Attribute/property signatures are more specific than SKU and must be
-        // preferred. Existing catalogs often reuse a parent SKU across colors.
-        $wooSignature = $this->wooVariationSignature($wooVariation);
-        if ($wooSignature !== '') {
-            $signatureMatches = [];
-            foreach ($basalamVariants as $index => $variant) {
-                if (!empty($used[$index])) {
-                    continue;
-                }
-                if ($wooSignature === $this->basalamVariationSignature((array)$variant)) {
-                    $signatureMatches[] = (int)$index;
-                }
-            }
-            if (count($signatureMatches) === 1) {
-                return $signatureMatches[0];
-            }
-        }
-
-        $wooSku = trim((string)($wooVariation['sku'] ?? ''));
-        if ($wooSku !== '') {
-            $skuMatches = [];
-            foreach ($basalamVariants as $index => $variant) {
-                if (!empty($used[$index])) {
-                    continue;
-                }
-                if ($wooSku === trim((string)($variant['sku'] ?? ''))) {
-                    $skuMatches[] = (int)$index;
-                }
-            }
-            if (count($skuMatches) === 1) {
-                return $skuMatches[0];
-            }
-        }
-
-        // Some legacy Woo products have one variation with no attributes, while
-        // the already-existing Basalam product also has one blank-property
-        // variation. A unique blank-to-blank match is deterministic and safe.
-        if ($wooSignature === '') {
-            $blankMatches = [];
-            foreach ($basalamVariants as $index => $variant) {
-                if (!empty($used[$index])) {
-                    continue;
-                }
-                if ($this->basalamVariationSignature((array)$variant) === '') {
-                    $blankMatches[] = (int)$index;
-                }
-            }
-            if (count($blankMatches) === 1) {
-                return $blankMatches[0];
-            }
-        }
-
-        return null;
-    }
-
-'''
-          s = s[:start] + replacement + s[end:]
-
-          start = s.index('    private function basalamVariationSignature(')
-          end = s.index('    private function saveProductMap(', start)
-          replacement = '''    private function basalamVariationSignature(array $variation): string
-    {
-        $parts = [];
-        foreach (($variation['properties'] ?? []) as $property) {
-            $rawName = $property['property'] ?? '';
-            if (is_array($rawName)) {
-                $rawName = $rawName['title'] ?? $rawName['name'] ?? $rawName['value'] ?? '';
-            }
-
-            $rawValue = $property['value'] ?? '';
-            if (is_array($rawValue)) {
-                $rawValue = $rawValue['value'] ?? $rawValue['title'] ?? $rawValue['name'] ?? '';
-            }
-
-            $name = $this->normalizeText((string)$rawName);
-            $value = $this->normalizeText((string)$rawValue);
-            if ($name !== '' && $value !== '') {
-                $parts[] = $name . '=' . $value;
-            }
-        }
-        sort($parts, SORT_STRING);
-        return implode('|', $parts);
-    }
-
-'''
-          s = s[:start] + replacement + s[end:]
-          p.write_text(s)
-          PY
+          python3 -c "import os,base64;exec(base64.b64decode(os.environ['PATCH_SCRIPT_B64']))"
           php -l includes/BasalamSync.php
-      - name: Commit source fix and remove temporary workflow
-        shell: bash
+      - name: Commit source fix
         run: |
           set -euo pipefail
           rm .github/workflows/apply-basalam-variation-match-fix.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name github-actions-bot
+          git config user.email github-actions-bot@users.noreply.github.com
           git add includes/BasalamSync.php .github/workflows/apply-basalam-variation-match-fix.yml
-          git commit -m "Fix matching existing Basalam variations"
+          git commit -m 'Fix matching existing Basalam variations'
           git push origin HEAD:codex/basalam-existing-variation-match
