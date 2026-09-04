@@ -251,8 +251,15 @@ class BasalamCategoryMigrator
                         break;
                     }
                 }
+                // Basalam may keep a renamed legacy product in review/pending status
+                // (for example 3568) instead of the requested 3790. What matters for
+                // a safe replacement is that the legacy listing is not public or
+                // purchasable and no longer owns the Woo title/SKUs.
+                $legacyPubliclyInactive =
+                    empty($verifyBody['is_showable'])
+                    && empty($verifyBody['is_available']);
                 if (
-                    $verifyStatus === 3790
+                    $legacyPubliclyInactive
                     && $this->normalizeTitle($verifyTitle) !== $this->normalizeTitle($wooTitle)
                     && $parentSkuReleased
                     && $variantSkusReleased
@@ -262,8 +269,15 @@ class BasalamCategoryMigrator
                 }
             }
             if (!$legacySafe) {
+                $observed = $verifyBody ? sprintf(
+                    ' وضعیت=%d، قابل نمایش=%s، قابل خرید=%s، SKU والد=%s',
+                    (int)($verifyBody['status']['value'] ?? $verifyBody['status'] ?? 0),
+                    !empty($verifyBody['is_showable']) ? 'بله' : 'خیر',
+                    !empty($verifyBody['is_available']) ? 'بله' : 'خیر',
+                    trim((string)($verifyBody['sku'] ?? '')) === '' ? 'آزاد' : 'درگیر'
+                ) : '';
                 $suffix = $verifyError ? ' آخرین خطا: ' . $verifyError : '';
-                throw new RuntimeException('محصول قدیمی به حالت امن منتقل نشد؛ ساخت محصول جدید متوقف شد.' . $suffix);
+                throw new RuntimeException('محصول قدیمی به حالت امن منتقل نشد؛ ساخت محصول جدید متوقف شد.' . $observed . $suffix);
             }
 
             $payload = $this->buildCreatePayload($product, $variations, $expectedId);
