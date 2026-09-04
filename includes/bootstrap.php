@@ -68,6 +68,8 @@ require_once __DIR__ . '/Auth.php';
 require_once __DIR__ . '/WooCommerceClient.php';
 require_once __DIR__ . '/BasalamClient.php';
 require_once __DIR__ . '/BasalamImageProcessor.php';
+require_once __DIR__ . '/BasalamSafeImageProcessor.php';
+require_once __DIR__ . '/BasalamSafeImageService.php';
 require_once __DIR__ . '/BasalamAttributeMapper.php';
 require_once __DIR__ . '/BasalamSync.php';
 require_once __DIR__ . '/BasalamCategoryMigrator.php';

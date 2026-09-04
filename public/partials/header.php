@@ -59,6 +59,7 @@ $user = Auth::user();
         <li class="nav-item"><a class="nav-link" href="categories.php">دسته‌بندی‌ها</a></li>
         <li class="nav-item"><a class="nav-link" href="basalam-products.php">سینک باسلام</a></li>
         <li class="nav-item"><a class="nav-link" href="basalam-catalog.php">وضعیت باسلام</a></li>
+        <li class="nav-item"><a class="nav-link" href="basalam-safe-images.php">اصلاح تصاویر باسلام</a></li>
         <?php if (Auth::isAdmin()): ?>
         <li class="nav-item"><a class="nav-link" href="basalam.php">تنظیمات باسلام</a></li>
         <li class="nav-item"><a class="nav-link" href="users.php">کاربران</a></li>
