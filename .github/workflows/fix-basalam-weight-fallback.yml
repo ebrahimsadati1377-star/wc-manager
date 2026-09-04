@@ -69,3 +69,5 @@ jobs:
           git add includes/BasalamSync.php
           git commit -m "Fix Basalam sync when Woo weight is missing"
           git push origin HEAD:main
+
+# trigger: 2026-09-04
