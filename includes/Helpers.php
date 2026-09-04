@@ -109,7 +109,8 @@ function getSetting(string $key, $default = null)
 function setSetting(string $key, string $value): void
 {
     $stmt = Database::get()->prepare(
-        'INSERT INTO settings (setting_key, setting_value) VALUES (:k, :v)\n         ON DUPLICATE KEY UPDATE setting_value = :v2'
+        'INSERT INTO settings (setting_key, setting_value) VALUES (:k, :v)
+         ON DUPLICATE KEY UPDATE setting_value = :v2'
     );
     $stmt->execute(['k' => $key, 'v' => $value, 'v2' => $value]);
 }
