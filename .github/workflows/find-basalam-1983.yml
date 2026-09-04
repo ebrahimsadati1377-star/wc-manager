@@ -1,0 +1,76 @@
+name: Find Basalam Woo 1983
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/find-basalam-1983.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Find close title match safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $pRes = $wc->getProduct(1983);
+          if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit(1); }
+          $target = (string)($pRes['body']['name'] ?? '');
+          $norm = static function(string $s): string {
+              $s = str_replace(["\u{200c}", "\u{200f}", "\u{200e}", 'ي', 'ك', 'ة'], ['', '', '', 'ی', 'ک', 'ه'], $s);
+              $s = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $s) ?? $s;
+              $s = preg_replace('/\s+/u', ' ', trim($s)) ?? trim($s);
+              return mb_strtolower($s, 'UTF-8');
+          };
+          $needle = $norm('تیشرت لانگ زنانه نخ پنبه قهوه ای');
+          $matches = [];
+          for ($page=1; $page<=10; $page++) {
+              $res = $client->getVendorProducts(['page'=>$page,'per_page'=>100]);
+              if ($res['error']) { echo 'LIST_ERROR=' . $res['error'] . PHP_EOL; exit(1); }
+              $body = $res['body'] ?? [];
+              $items = $body['data'] ?? $body['products'] ?? $body;
+              if (!is_array($items) || !$items) break;
+              $count = 0;
+              foreach ($items as $item) {
+                  if (!is_array($item)) continue;
+                  $count++;
+                  $name = (string)($item['name'] ?? $item['title'] ?? '');
+                  $n = $norm($name);
+                  if ($n === $needle || str_contains($n, 'تیشرت لانگ زنانه نخ پنبه قهوه') || str_contains($n, 'تیشرت لانگ زنانه نخ پنبه')) {
+                      $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name,'status'=>$item['status']??null,'stock'=>$item['stock']??null];
+                  }
+              }
+              if ($count < 100) break;
+          }
+          echo 'TARGET=' . $target . PHP_EOL;
+          echo 'MATCHES=' . json_encode($matches, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          PHP
