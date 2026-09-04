@@ -1,4 +1,4 @@
-name: Diagnose Basalam Woo 1983
+name: Repair Basalam Woo 1983
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
 jobs:
-  diagnose:
+  repair:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Inspect Woo 1983 safely
+      - name: Create base product then complete sync
         shell: bash
         run: |
           set -euo pipefail
@@ -41,66 +41,35 @@ jobs:
           <?php
           require_once 'includes/bootstrap.php';
           $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+          $existing = $sync->getProductMap(1983);
+          if ((int)($existing['basalam_product_id'] ?? 0) > 0) {
+              echo 'ALREADY_MAPPED=' . (int)$existing['basalam_product_id'] . PHP_EOL;
+              echo 'SYNC=' . json_encode($sync->syncProduct(1983, true), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              exit;
+          }
           $pRes = $wc->getProduct(1983);
-          if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit; }
+          if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit(1); }
           $p = $pRes['body'];
-          $out = [
-            'id' => $p['id'] ?? null,
-            'name' => $p['name'] ?? null,
-            'type' => $p['type'] ?? null,
-            'status' => $p['status'] ?? null,
-            'price' => $p['price'] ?? null,
-            'regular_price' => $p['regular_price'] ?? null,
-            'sale_price' => $p['sale_price'] ?? null,
-            'manage_stock' => $p['manage_stock'] ?? null,
-            'stock_quantity' => $p['stock_quantity'] ?? null,
-            'stock_status' => $p['stock_status'] ?? null,
-            'weight' => $p['weight'] ?? null,
-            'categories' => $p['categories'] ?? [],
-            'attributes' => $p['attributes'] ?? [],
-            'images_count' => count($p['images'] ?? []),
-          ];
-          echo 'PRODUCT=' . json_encode($out, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-
           $vars = [];
-          if (($p['type'] ?? '') === 'variable') {
-            $vRes = $wc->getVariations(1983, ['per_page' => 100]);
-            if (!$vRes['error']) {
-              foreach ($vRes['body'] as $v) {
-                $vars[] = [
-                  'id'=>$v['id']??null,'price'=>$v['price']??null,'regular_price'=>$v['regular_price']??null,
-                  'sale_price'=>$v['sale_price']??null,'stock_quantity'=>$v['stock_quantity']??null,
-                  'stock_status'=>$v['stock_status']??null,'attributes'=>$v['attributes']??[],'sku'=>$v['sku']??null
-                ];
-              }
-            }
-          }
-          echo 'VARIATIONS=' . json_encode($vars, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-
-          $db = Database::get();
-          $ids = array_values(array_filter(array_map(fn($c)=>(int)($c['id']??0), $p['categories']??[])));
-          if ($ids) {
-            $ph = implode(',', array_fill(0,count($ids),'?'));
-            $st = $db->prepare("SELECT * FROM basalam_category_map WHERE wc_category_id IN ($ph)");
-            $st->execute($ids);
-            echo 'CATEGORY_MAPS=' . json_encode($st->fetchAll(), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          }
-
-          $sync = new BasalamSync($wc, new BasalamClient());
-          $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
-          $rm->setAccessible(true);
+          $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory'); $rm->setAccessible(true);
           $cat = $rm->invoke($sync, $p);
-          echo 'RESOLVED_CATEGORY=' . json_encode($cat, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          if ($cat) {
-            $client = new BasalamClient();
-            $ca = $client->getCategoryAttributes((int)$cat['basalam_category_id'], null, false);
-            echo 'BASALAM_ATTRS=' . json_encode($ca, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-            $bm = new ReflectionMethod(BasalamSync::class, 'buildProductPayload');
-            $bm->setAccessible(true);
-            $payload = $bm->invoke($sync, $p, $vars, (int)$cat['basalam_category_id'], true);
-            echo 'PAYLOAD=' . json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-            $mapper = new BasalamAttributeMapper($client);
-            $ar = $mapper->build($p, $vars, (int)$cat['basalam_category_id'], null);
-            echo 'ATTR_MAP=' . json_encode($ar, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          }
+          if (!$cat) { echo 'NO_CATEGORY_MAP' . PHP_EOL; exit(1); }
+          $bm = new ReflectionMethod(BasalamSync::class, 'buildProductPayload'); $bm->setAccessible(true);
+          $payload = $bm->invoke($sync, $p, $vars, (int)$cat['basalam_category_id'], true);
+          unset($payload['product_attribute'], $payload['photo'], $payload['photos']);
+          $res = $client->createProduct($payload);
+          echo 'CREATE_STATUS=' . ($res['status'] ?? 0) . PHP_EOL;
+          echo 'CREATE_ERROR=' . ($res['error'] ?? '') . PHP_EOL;
+          echo 'CREATE_BODY=' . json_encode($res['body'] ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if ($res['error']) exit(1);
+          $id = (int)($res['body']['id'] ?? 0);
+          if ($id <= 0) { echo 'NO_ID' . PHP_EOL; exit(1); }
+          $hm = new ReflectionMethod(BasalamSync::class, 'computeWooHash'); $hm->setAccessible(true);
+          $hash = $hm->invoke($sync, $p, $vars, $cat);
+          $sm = new ReflectionMethod(BasalamSync::class, 'saveProductMap'); $sm->setAccessible(true);
+          $sm->invoke($sync, 1983, $id, $hash, 'synced', null);
+          echo 'MAPPED=' . $id . PHP_EOL;
+          echo 'SYNC=' . json_encode($sync->syncProduct(1983, true), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
           PHP
