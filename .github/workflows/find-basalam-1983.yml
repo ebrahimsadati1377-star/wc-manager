@@ -1,4 +1,4 @@
-name: Find Basalam Woo 1983
+name: Map Basalam Woo 1983
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
 jobs:
-  find:
+  map:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Find close title match safely
+      - name: Map existing product and force sync
         shell: bash
         run: |
           set -euo pipefail
@@ -42,35 +42,31 @@ jobs:
           require_once 'includes/bootstrap.php';
           $wc = new WooCommerceClient();
           $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+
           $pRes = $wc->getProduct(1983);
           if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit(1); }
-          $target = (string)($pRes['body']['name'] ?? '');
-          $norm = static function(string $s): string {
-              $s = str_replace(["\u{200c}", "\u{200f}", "\u{200e}", 'ي', 'ك', 'ة'], ['', '', '', 'ی', 'ک', 'ه'], $s);
-              $s = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $s) ?? $s;
-              $s = preg_replace('/\s+/u', ' ', trim($s)) ?? trim($s);
-              return mb_strtolower($s, 'UTF-8');
-          };
-          $needle = $norm('تیشرت لانگ زنانه نخ پنبه قهوه ای');
-          $matches = [];
-          for ($page=1; $page<=10; $page++) {
-              $res = $client->getVendorProducts(['page'=>$page,'per_page'=>100]);
-              if ($res['error']) { echo 'LIST_ERROR=' . $res['error'] . PHP_EOL; exit(1); }
-              $body = $res['body'] ?? [];
-              $items = $body['data'] ?? $body['products'] ?? $body;
-              if (!is_array($items) || !$items) break;
-              $count = 0;
-              foreach ($items as $item) {
-                  if (!is_array($item)) continue;
-                  $count++;
-                  $name = (string)($item['name'] ?? $item['title'] ?? '');
-                  $n = $norm($name);
-                  if ($n === $needle || str_contains($n, 'تیشرت لانگ زنانه نخ پنبه قهوه') || str_contains($n, 'تیشرت لانگ زنانه نخ پنبه')) {
-                      $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name,'status'=>$item['status']??null,'stock'=>$item['stock']??null];
-                  }
-              }
-              if ($count < 100) break;
-          }
-          echo 'TARGET=' . $target . PHP_EOL;
-          echo 'MATCHES=' . json_encode($matches, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          $p = $pRes['body'];
+
+          $check = $client->getProduct(57503272, true);
+          if ($check['error']) { echo 'BASALAM_READ_ERROR=' . $check['error'] . PHP_EOL; exit(1); }
+          $existingName = (string)($check['body']['name'] ?? '');
+          echo 'EXISTING=' . json_encode(['id'=>57503272,'name'=>$existingName], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
+          $rm->setAccessible(true);
+          $cat = $rm->invoke($sync, $p);
+          if (!$cat) { echo 'NO_CATEGORY_MAP' . PHP_EOL; exit(1); }
+
+          $hm = new ReflectionMethod(BasalamSync::class, 'computeWooHash');
+          $hm->setAccessible(true);
+          $hash = $hm->invoke($sync, $p, [], $cat);
+
+          $sm = new ReflectionMethod(BasalamSync::class, 'saveProductMap');
+          $sm->setAccessible(true);
+          $sm->invoke($sync, 1983, 57503272, $hash, 'synced', null);
+
+          $result = $sync->syncProduct(1983, true);
+          echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (empty($result['success'])) exit(1);
           PHP
