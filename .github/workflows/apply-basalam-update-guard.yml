@@ -24,48 +24,34 @@ jobs:
           from pathlib import Path
           p = Path('includes/BasalamClient.php')
           s = p.read_text()
-          old = """    public function updateProduct(int $productId, array $data): array
-    {
-        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
-    }
-"""
-          new = """    public function updateProduct(int $productId, array $data): array
-    {
-        // Basalam does not allow changing category_id after a product is created.
-        // Existing Woo→Basalam mappings may use a newer Woo category mapping, so
-        // never send category_id on PATCH; creation still sends it normally.
-        unset($data['category_id']);
-        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
-    }
-"""
+          old = "    public function updateProduct(int $productId, array $data): array\n    {\n        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);\n    }\n"
+          new = "    public function updateProduct(int $productId, array $data): array\n    {\n        // Basalam does not allow changing category_id after a product is created.\n        // Existing Woo→Basalam mappings may use a newer Woo category mapping, so\n        // never send category_id on PATCH; creation still sends it normally.\n        unset($data['category_id']);\n        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);\n    }\n"
           if old not in s:
               raise SystemExit('updateProduct target not found')
           s = s.replace(old, new, 1)
-
-          marker = """        if (!empty($body['errors']) && is_array($body['errors'])) {
-"""
-          insert = """        if (!empty($body['messages']) && is_array($body['messages'])) {
-            $messages = [];
-            foreach ($body['messages'] as $item) {
-                if (!is_array($item)) {
-                    continue;
-                }
-                $message = trim((string)($item['message'] ?? ''));
-                if ($message === '') {
-                    continue;
-                }
-                $fields = array_values(array_filter(array_map(
-                    static fn($field) => trim((string)$field),
-                    (array)($item['fields'] ?? [])
-                )));
-                $messages[] = $fields ? implode(', ', $fields) . ': ' . $message : $message;
-            }
-            if ($messages) {
-                return implode(' | ', $messages);
-            }
-        }
-
-"""
+          marker = "        if (!empty($body['errors']) && is_array($body['errors'])) {\n"
+          insert = (
+              "        if (!empty($body['messages']) && is_array($body['messages'])) {\n"
+              "            $messages = [];\n"
+              "            foreach ($body['messages'] as $item) {\n"
+              "                if (!is_array($item)) {\n"
+              "                    continue;\n"
+              "                }\n"
+              "                $message = trim((string)($item['message'] ?? ''));\n"
+              "                if ($message === '') {\n"
+              "                    continue;\n"
+              "                }\n"
+              "                $fields = array_values(array_filter(array_map(\n"
+              "                    static fn($field) => trim((string)$field),\n"
+              "                    (array)($item['fields'] ?? [])\n"
+              "                )));\n"
+              "                $messages[] = $fields ? implode(', ', $fields) . ': ' . $message : $message;\n"
+              "            }\n"
+              "            if ($messages) {\n"
+              "                return implode(' | ', $messages);\n"
+              "            }\n"
+              "        }\n\n"
+          )
           if marker not in s:
               raise SystemExit('extractApiError target not found')
           s = s.replace(marker, insert + marker, 1)
