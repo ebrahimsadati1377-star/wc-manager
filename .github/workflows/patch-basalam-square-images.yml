@@ -1,0 +1,51 @@
+name: Patch Basalam Square Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-basalam-square-images.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch image sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('includes/BasalamSync.php')
+          s = p.read_text()
+          old1 = "if ($creating && $this->settingBool('basalam_sync_images', true)) {"
+          new1 = "if (($creating || $force) && $this->settingBool('basalam_sync_images', true)) {"
+          old2 = "$upload = $this->basalam->uploadRemoteImage($url);"
+          new2 = "$upload = BasalamImageProcessor::upload($this->basalam, $url);"
+          if old1 not in s:
+              raise SystemExit('image sync condition not found')
+          if old2 not in s:
+              raise SystemExit('remote image upload line not found')
+          s = s.replace(old1, new1, 1).replace(old2, new2, 1)
+          p.write_text(s)
+          PY
+          php -l includes/BasalamImageProcessor.php
+          php -l includes/BasalamSync.php
+          php -l includes/bootstrap.php
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/BasalamSync.php
+          git commit -m "Fit Woo images safely for Basalam square photos"
+          git push origin HEAD:main
