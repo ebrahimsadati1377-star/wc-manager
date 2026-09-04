@@ -1,0 +1,116 @@
+name: Safely remap Woo 1317 to existing Basalam product
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/remap-basalam-1317.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  remap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Validate candidate, remap, and sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+
+          function normTitle(string $title): string {
+              $title = html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+              $title = str_replace(["\u{200c}","\u{200d}","\u{200e}","\u{200f}",'ي','ى','ك','ة','ۀ'],['','','','','ی','ی','ک','ه','ه'],$title);
+              $title = function_exists('mb_strtolower') ? mb_strtolower($title,'UTF-8') : strtolower($title);
+              $title = preg_replace('/[^\p{L}\p{N}]+/u',' ', $title) ?? $title;
+              return preg_replace('/\s+/u',' ',trim($title)) ?? trim($title);
+          }
+
+          $wcId = 1317;
+          $candidateId = 57616386;
+          $expectedCategoryId = 239;
+          $db = Database::get();
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+
+          $wooRes = $wc->getProduct($wcId);
+          if ($wooRes['error']) throw new RuntimeException('Woo read failed: ' . $wooRes['error']);
+          $woo = (array)$wooRes['body'];
+          $candidateRes = $client->getProduct($candidateId, true);
+          if ($candidateRes['error']) throw new RuntimeException('Candidate read failed: ' . $candidateRes['error']);
+          $candidate = (array)$candidateRes['body'];
+
+          $wooTitle = (string)($woo['name'] ?? '');
+          $candidateTitle = (string)($candidate['name'] ?? $candidate['title'] ?? '');
+          $candidateCategory = (int)($candidate['category']['id'] ?? $candidate['category_id'] ?? 0);
+          if (normTitle($wooTitle) !== normTitle($candidateTitle)) {
+              throw new RuntimeException('Title mismatch; refusing remap: ' . $wooTitle . ' <> ' . $candidateTitle);
+          }
+          if ($candidateCategory !== $expectedCategoryId) {
+              throw new RuntimeException('Candidate category mismatch; refusing remap: ' . $candidateCategory);
+          }
+
+          $used = $db->prepare('SELECT wc_product_id FROM basalam_product_map WHERE basalam_product_id=:id LIMIT 1');
+          $used->execute(['id'=>$candidateId]);
+          $usedBy = $used->fetchColumn();
+          if ($usedBy !== false && (int)$usedBy !== $wcId) {
+              throw new RuntimeException('Candidate already mapped to Woo #' . (int)$usedBy);
+          }
+
+          $before = $sync->getProductMap($wcId);
+          echo 'BEFORE=' . json_encode($before, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo 'CANDIDATE=' . json_encode(['id'=>$candidateId,'name'=>$candidateTitle,'category_id'=>$candidateCategory], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          $db->beginTransaction();
+          try {
+              $stmt = $db->prepare(
+                  'UPDATE basalam_product_map SET basalam_product_id=:basalam,last_wc_hash=NULL,sync_status=:status,sync_error=:error,last_synced_at=NULL WHERE wc_product_id=:wc'
+              );
+              $stmt->execute([
+                  'basalam'=>$candidateId,
+                  'status'=>'matched',
+                  'error'=>'Safe remap to exact-title existing Basalam product in correct category',
+                  'wc'=>$wcId,
+              ]);
+              if ($stmt->rowCount() < 1) throw new RuntimeException('Product map row not found');
+              $delete = $db->prepare('DELETE FROM basalam_variation_map WHERE wc_product_id=:wc');
+              $delete->execute(['wc'=>$wcId]);
+              $db->commit();
+          } catch (Throwable $e) {
+              if ($db->inTransaction()) $db->rollBack();
+              throw $e;
+          }
+
+          $result = $sync->syncProduct($wcId, true);
+          echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo 'AFTER=' . json_encode($sync->getProductMap($wcId), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (empty($result['success'])) throw new RuntimeException('Sync failed after remap: ' . ($result['message'] ?? 'unknown'));
+          foreach ((array)($result['warnings'] ?? []) as $warning) {
+              if (str_contains((string)$warning, 'دسته محصول باسلام')) {
+                  throw new RuntimeException('Category mismatch warning remained after remap: ' . $warning);
+              }
+          }
+          PHP
