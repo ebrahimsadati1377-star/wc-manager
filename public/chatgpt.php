@@ -48,7 +48,7 @@ require __DIR__ . '/partials/header.php';
 ?>
 
 <style>
-.api-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);gap:1rem;align-items:start}.api-endpoint{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem .85rem;border:1px solid #e8edf3;border-radius:12px;background:#fafcff}.api-endpoint code{direction:ltr;display:block;overflow:auto;font-size:.72rem}.api-token-once{border:1px solid #f5c451;background:#fffaf0;border-radius:16px;padding:1rem}.api-token-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem;margin-top:.75rem}.api-security-list{display:grid;gap:.8rem}.api-security-item{display:flex;gap:.65rem;align-items:flex-start}.api-security-item i{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:#eff6ff;color:#2563eb;flex:0 0 32px}.api-security-item strong{display:block;font-size:.78rem}.api-security-item span{display:block;color:#7c8797;font-size:.7rem;line-height:1.7;margin-top:.12rem}@media(max-width:991.98px){.api-layout{grid-template-columns:1fr}}@media(max-width:767.98px){.api-token-row{grid-template-columns:1fr}.api-endpoint{align-items:flex-start;flex-direction:column}.api-endpoint .btn{width:100%}}
+.api-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);gap:1rem;align-items:start}.api-endpoint{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem .85rem;border:1px solid #e8edf3;border-radius:12px;background:#fafcff}.api-endpoint code{direction:ltr;display:block;max-width:100%;overflow:auto;font-size:.72rem;overflow-wrap:anywhere;word-break:break-all}.api-token-once{border:1px solid #f5c451;background:#fffaf0;border-radius:16px;padding:1rem}.api-token-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.5rem;margin-top:.75rem}.api-security-list{display:grid;gap:.8rem}.api-security-item{display:flex;gap:.65rem;align-items:flex-start}.api-security-item i{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:#eff6ff;color:#2563eb;flex:0 0 32px}.api-security-item strong{display:block;font-size:.78rem}.api-security-item span{display:block;color:#7c8797;font-size:.7rem;line-height:1.7;margin-top:.12rem}@media(max-width:991.98px){.api-layout{grid-template-columns:1fr}}@media(max-width:767.98px){.api-token-row{grid-template-columns:1fr}.api-endpoint{align-items:flex-start;flex-direction:column}.api-endpoint .btn{width:100%}}
 </style>
 
 <div class="app-page-head">
@@ -88,7 +88,7 @@ require __DIR__ . '/partials/header.php';
       <?php if (!$tokens && !$legacyActive && !$envActive): ?>
         <div class="app-empty-state"><div class="app-empty-state__icon"><i class="fas fa-key"></i></div><h4>توکن فعالی وجود ندارد</h4><p>برای اتصال اولین کلاینت، یک توکن مستقل بسازید.</p></div>
       <?php else: ?>
-      <div class="table-responsive">
+      <div class="table-responsive app-desktop-table">
         <table class="table align-middle mb-0">
           <thead><tr><th>نام</th><th>شناسه</th><th>ساخته‌شده</th><th>انتهای توکن</th><th class="text-end">عملیات</th></tr></thead>
           <tbody>
@@ -99,6 +99,25 @@ require __DIR__ . '/partials/header.php';
           <?php endforeach; ?>
           </tbody>
         </table>
+      </div>
+      <div class="app-mobile-list p-2">
+        <?php if ($envActive): ?>
+          <div class="app-mobile-card">
+            <div class="app-mobile-card__top"><div class="app-mobile-card__main"><div class="app-mobile-card__title">Environment token</div><div class="app-mobile-card__meta"><span>مدیریت از Environment</span><span class="badge text-bg-success">فعال</span></div></div></div>
+          </div>
+        <?php endif; ?>
+        <?php if ($legacyActive): ?>
+          <div class="app-mobile-card">
+            <div class="app-mobile-card__top"><div class="app-mobile-card__main"><div class="app-mobile-card__title">Legacy token</div><div class="app-mobile-card__meta"><span dir="ltr">legacy</span><span>نسخه قدیمی</span></div></div></div>
+            <div class="app-mobile-card__actions"><form method="post" class="d-grid" onsubmit="return confirm('توکن قدیمی باطل شود؟')"><input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>"><input type="hidden" name="action" value="revoke_legacy"><button class="btn btn-outline-danger" type="submit"><i class="fas fa-ban ms-1"></i>ابطال</button></form></div>
+          </div>
+        <?php endif; ?>
+        <?php foreach ($tokens as $token): ?>
+          <div class="app-mobile-card">
+            <div class="app-mobile-card__top"><div class="app-mobile-card__main"><div class="app-mobile-card__title"><?= e($token['name']) ?></div><div class="app-mobile-card__meta"><span dir="ltr" style="overflow-wrap:anywhere"><?= e($token['id']) ?></span><?php if ($token['last4']): ?><span dir="ltr">…<?= e($token['last4']) ?></span><?php endif; ?><span dir="ltr"><?= e($token['created_at'] ?: '-') ?></span></div></div></div>
+            <div class="app-mobile-card__actions"><form method="post" class="d-grid" onsubmit="return confirm('این توکن باطل شود؟')"><input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>"><input type="hidden" name="action" value="revoke_client"><input type="hidden" name="token_id" value="<?= e($token['id']) ?>"><button class="btn btn-outline-danger" type="submit"><i class="fas fa-ban ms-1"></i>ابطال</button></form></div>
+          </div>
+        <?php endforeach; ?>
       </div>
       <?php endif; ?>
     </section>
