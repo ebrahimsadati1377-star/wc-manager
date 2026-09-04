@@ -54,7 +54,7 @@ jobs:
           };
           $matches = [];
           for ($page=1; $page<=20; $page++) {
-              $res = $client->getVendorProducts(['page'=>$page,'per_page'=>100]);
+              $res = $client->getVendorProducts(['statuses'=>[2976,3790],'page'=>$page,'per_page'=>100]);
               if ($res['error']) { echo 'LIST_ERROR=' . $res['error'] . PHP_EOL; exit(1); }
               $body = $res['body'] ?? [];
               $items = $body['data'] ?? $body['products'] ?? $body;
@@ -65,7 +65,7 @@ jobs:
                   $count++;
                   $name = trim((string)($item['name'] ?? $item['title'] ?? ''));
                   if ($name !== '' && $norm($name) === $norm($target)) {
-                      $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name];
+                      $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name,'status'=>$item['status']??null];
                   }
               }
               if ($count < 100) break;
