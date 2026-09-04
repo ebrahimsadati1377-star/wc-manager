@@ -1,0 +1,106 @@
+name: Diagnose Basalam Woo 1983
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-basalam-1983.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect Woo 1983 safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $pRes = $wc->getProduct(1983);
+          if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit; }
+          $p = $pRes['body'];
+          $out = [
+            'id' => $p['id'] ?? null,
+            'name' => $p['name'] ?? null,
+            'type' => $p['type'] ?? null,
+            'status' => $p['status'] ?? null,
+            'price' => $p['price'] ?? null,
+            'regular_price' => $p['regular_price'] ?? null,
+            'sale_price' => $p['sale_price'] ?? null,
+            'manage_stock' => $p['manage_stock'] ?? null,
+            'stock_quantity' => $p['stock_quantity'] ?? null,
+            'stock_status' => $p['stock_status'] ?? null,
+            'weight' => $p['weight'] ?? null,
+            'categories' => $p['categories'] ?? [],
+            'attributes' => $p['attributes'] ?? [],
+            'images_count' => count($p['images'] ?? []),
+          ];
+          echo 'PRODUCT=' . json_encode($out, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          $vars = [];
+          if (($p['type'] ?? '') === 'variable') {
+            $vRes = $wc->getVariations(1983, ['per_page' => 100]);
+            if (!$vRes['error']) {
+              foreach ($vRes['body'] as $v) {
+                $vars[] = [
+                  'id'=>$v['id']??null,'price'=>$v['price']??null,'regular_price'=>$v['regular_price']??null,
+                  'sale_price'=>$v['sale_price']??null,'stock_quantity'=>$v['stock_quantity']??null,
+                  'stock_status'=>$v['stock_status']??null,'attributes'=>$v['attributes']??[],'sku'=>$v['sku']??null
+                ];
+              }
+            }
+          }
+          echo 'VARIATIONS=' . json_encode($vars, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          $db = Database::get();
+          $ids = array_values(array_filter(array_map(fn($c)=>(int)($c['id']??0), $p['categories']??[])));
+          if ($ids) {
+            $ph = implode(',', array_fill(0,count($ids),'?'));
+            $st = $db->prepare("SELECT * FROM basalam_category_map WHERE wc_category_id IN ($ph)");
+            $st->execute($ids);
+            echo 'CATEGORY_MAPS=' . json_encode($st->fetchAll(), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          }
+
+          $sync = new BasalamSync($wc, new BasalamClient());
+          $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
+          $rm->setAccessible(true);
+          $cat = $rm->invoke($sync, $p);
+          echo 'RESOLVED_CATEGORY=' . json_encode($cat, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if ($cat) {
+            $client = new BasalamClient();
+            $ca = $client->getCategoryAttributes((int)$cat['basalam_category_id'], null, false);
+            echo 'BASALAM_ATTRS=' . json_encode($ca, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+            $bm = new ReflectionMethod(BasalamSync::class, 'buildProductPayload');
+            $bm->setAccessible(true);
+            $payload = $bm->invoke($sync, $p, $vars, (int)$cat['basalam_category_id'], true);
+            echo 'PAYLOAD=' . json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+            $mapper = new BasalamAttributeMapper($client);
+            $ar = $mapper->build($p, $vars, (int)$cat['basalam_category_id'], null);
+            echo 'ATTR_MAP=' . json_encode($ar, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          }
+          PHP
