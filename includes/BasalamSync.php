@@ -559,6 +559,31 @@ class BasalamSync
         $existingMaps = $this->getVariationMapsByProduct($wcProductId);
         $used = [];
 
+        // Reserve Basalam variants that are already mapped so a new/unmapped Woo
+        // variation can never be attached to an existing mapping by mistake.
+        foreach ($existingMaps as $existingMap) {
+            $mappedVariationId = (int)($existingMap['basalam_variation_id'] ?? 0);
+            if ($mappedVariationId <= 0) {
+                continue;
+            }
+            foreach ($basalamVariants as $index => $variant) {
+                if ((int)($variant['id'] ?? 0) === $mappedVariationId) {
+                    $used[$index] = true;
+                    break;
+                }
+            }
+        }
+
+        // A duplicated Woo variation SKU is not a safe identifier and should not
+        // be pushed to every Basalam variation.
+        $skuCounts = [];
+        foreach ($wooVariations as $variation) {
+            $variationSku = trim((string)($variation['sku'] ?? ''));
+            if ($variationSku !== '') {
+                $skuCounts[$variationSku] = ($skuCounts[$variationSku] ?? 0) + 1;
+            }
+        }
+
         foreach ($wooVariations as $wooVariation) {
             $wcVariationId = (int)($wooVariation['id'] ?? 0);
             $map = $existingMaps[$wcVariationId] ?? null;
@@ -589,7 +614,7 @@ class BasalamSync
                 'stock' => $this->wooStock($wooVariation),
             ];
             $sku = trim((string)($wooVariation['sku'] ?? ''));
-            if ($sku !== '') {
+            if ($sku !== '' && ($skuCounts[$sku] ?? 0) === 1) {
                 $update['sku'] = $sku;
             }
 
@@ -634,20 +659,56 @@ class BasalamSync
 
     private function findVariantMatchIndex(array $wooVariation, array $basalamVariants, array $used): ?int
     {
-        $wooSku = trim((string)($wooVariation['sku'] ?? ''));
-        if ($wooSku !== '') {
+        // Attribute/property signatures are more specific than SKU and must be
+        // preferred. Existing catalogs often reuse a parent SKU across colors.
+        $wooSignature = $this->wooVariationSignature($wooVariation);
+        if ($wooSignature !== '') {
+            $signatureMatches = [];
             foreach ($basalamVariants as $index => $variant) {
-                if (!empty($used[$index])) continue;
-                if ($wooSku === trim((string)($variant['sku'] ?? ''))) return (int)$index;
+                if (!empty($used[$index])) {
+                    continue;
+                }
+                if ($wooSignature === $this->basalamVariationSignature((array)$variant)) {
+                    $signatureMatches[] = (int)$index;
+                }
+            }
+            if (count($signatureMatches) === 1) {
+                return $signatureMatches[0];
             }
         }
 
-        $wooSignature = $this->wooVariationSignature($wooVariation);
-        if ($wooSignature === '') return null;
+        $wooSku = trim((string)($wooVariation['sku'] ?? ''));
+        if ($wooSku !== '') {
+            $skuMatches = [];
+            foreach ($basalamVariants as $index => $variant) {
+                if (!empty($used[$index])) {
+                    continue;
+                }
+                if ($wooSku === trim((string)($variant['sku'] ?? ''))) {
+                    $skuMatches[] = (int)$index;
+                }
+            }
+            if (count($skuMatches) === 1) {
+                return $skuMatches[0];
+            }
+        }
 
-        foreach ($basalamVariants as $index => $variant) {
-            if (!empty($used[$index])) continue;
-            if ($wooSignature === $this->basalamVariationSignature((array)$variant)) return (int)$index;
+        // Some legacy Woo products have one variation with no attributes, while
+        // the already-existing Basalam product also has one blank-property
+        // variation. A unique blank-to-blank match is deterministic and safe.
+        if ($wooSignature === '') {
+            $blankMatches = [];
+            foreach ($basalamVariants as $index => $variant) {
+                if (!empty($used[$index])) {
+                    continue;
+                }
+                if ($this->basalamVariationSignature((array)$variant) === '') {
+                    $blankMatches[] = (int)$index;
+                }
+            }
+            if (count($blankMatches) === 1) {
+                return $blankMatches[0];
+            }
         }
 
         return null;
@@ -669,9 +730,21 @@ class BasalamSync
     {
         $parts = [];
         foreach (($variation['properties'] ?? []) as $property) {
-            $name = $this->normalizeText((string)($property['property'] ?? ''));
-            $value = $this->normalizeText((string)($property['value'] ?? ''));
-            if ($name !== '' && $value !== '') $parts[] = $name . '=' . $value;
+            $rawName = $property['property'] ?? '';
+            if (is_array($rawName)) {
+                $rawName = $rawName['title'] ?? $rawName['name'] ?? $rawName['value'] ?? '';
+            }
+
+            $rawValue = $property['value'] ?? '';
+            if (is_array($rawValue)) {
+                $rawValue = $rawValue['value'] ?? $rawValue['title'] ?? $rawValue['name'] ?? '';
+            }
+
+            $name = $this->normalizeText((string)$rawName);
+            $value = $this->normalizeText((string)$rawValue);
+            if ($name !== '' && $value !== '') {
+                $parts[] = $name . '=' . $value;
+            }
         }
         sort($parts, SORT_STRING);
         return implode('|', $parts);
