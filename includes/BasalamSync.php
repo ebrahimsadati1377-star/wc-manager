@@ -239,7 +239,7 @@ class BasalamSync
             }
         }
 
-        if ($creating && $this->settingBool('basalam_sync_images', true)) {
+        if (($creating || $force) && $this->settingBool('basalam_sync_images', true)) {
             $imageIds = $this->uploadWooImages($product, $warnings);
             if ($imageIds) {
                 $payload['photo'] = array_shift($imageIds);
@@ -495,7 +495,7 @@ class BasalamSync
                 continue;
             }
 
-            $upload = $this->basalam->uploadRemoteImage($url);
+            $upload = BasalamImageProcessor::upload($this->basalam, $url);
             if ($upload['error']) {
                 $warnings[] = 'آپلود یک تصویر ناموفق بود: ' . $upload['error'];
                 continue;
