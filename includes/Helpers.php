@@ -55,9 +55,9 @@ function requirePostAndCsrfOrFail(): void
 }
 
 /**
- * All scripts under public/ajax are state-changing or connection-test endpoints.
- * Protect them centrally so newly added AJAX handlers cannot accidentally omit
- * POST/CSRF checks.
+ * AJAX handlers are POST+CSRF by default. The Basalam moderation-detail endpoint
+ * is an authenticated, read-only GET, so allow that exact endpoint through; it
+ * still calls Auth::requireLogin() inside the handler before returning data.
  */
 function enforceAjaxRequestSecurity(): void
 {
@@ -66,9 +66,19 @@ function enforceAjaxRequestSecurity(): void
     }
 
     $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_FILENAME'] ?? ''));
-    if (strpos($script, '/public/ajax/') !== false) {
-        requirePostAndCsrfOrFail();
+    if (strpos($script, '/public/ajax/') === false) {
+        return;
     }
+
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if (
+        basename($script) === 'basalam_product_status_detail.php'
+        && in_array($method, ['GET', 'HEAD'], true)
+    ) {
+        return;
+    }
+
+    requirePostAndCsrfOrFail();
 }
 
 function setFlash(string $type, string $message): void
@@ -99,8 +109,7 @@ function getSetting(string $key, $default = null)
 function setSetting(string $key, string $value): void
 {
     $stmt = Database::get()->prepare(
-        'INSERT INTO settings (setting_key, setting_value) VALUES (:k, :v)
-         ON DUPLICATE KEY UPDATE setting_value = :v2'
+        'INSERT INTO settings (setting_key, setting_value) VALUES (:k, :v)\n         ON DUPLICATE KEY UPDATE setting_value = :v2'
     );
     $stmt->execute(['k' => $key, 'v' => $value, 'v2' => $value]);
 }
