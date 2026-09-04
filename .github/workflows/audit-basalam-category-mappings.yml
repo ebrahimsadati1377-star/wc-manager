@@ -1,5 +1,6 @@
 name: Audit Basalam mapped product categories
 
+# Re-run after correcting the Woo -> Basalam category map table.
 on:
   push:
     branches: [tmp/diag-basalam-1695]
@@ -55,8 +56,6 @@ jobs:
           $catRef = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
           $catRef->setAccessible(true);
 
-          // Build a vendor-catalog title index so mismatches can show existing
-          // same-title candidates before any replacement product is considered.
           $vendorProducts = [];
           $byNormalizedTitle = [];
           for ($page = 1; $page <= 10; $page++) {
@@ -142,7 +141,6 @@ jobs:
               foreach (($byNormalizedTitle[$norm] ?? []) as $candidate) {
                   $cid = (int)($candidate['id'] ?? 0);
                   if ($cid <= 0) continue;
-                  // Use full product read to capture its real category when possible.
                   $cr = $client->getProduct($cid, true);
                   $cb = (array)($cr['body'] ?? []);
                   $ccat = (int)($cb['category']['id'] ?? $cb['category_id'] ?? 0);
