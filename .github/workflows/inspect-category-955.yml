@@ -1,0 +1,53 @@
+name: Inspect Basalam legacy SKU behavior
+on:
+  push:
+    branches: [tmp/test-basalam-sku-fallback]
+    paths:
+      - '.github/workflows/inspect-category-955.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read current product state
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/inspect.php <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $c=new BasalamClient();
+          $r=$c->getProduct(57613930,true);
+          $b=(array)($r['body']??[]);
+          echo json_encode([
+            'error'=>$r['error']??null,
+            'id'=>$b['id']??null,
+            'name'=>$b['name']??$b['title']??null,
+            'sku'=>$b['sku']??null,
+            'status'=>$b['status']??null,
+            'showable'=>$b['is_showable']??null,
+            'available'=>$b['is_available']??null,
+            'category'=>$b['category']??null,
+            'variants'=>$b['variants']??$b['variant']??[],
+          ],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES).PHP_EOL;
+          PHP
+          base64 -w0 /tmp/inspect.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
