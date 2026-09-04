@@ -1,0 +1,159 @@
+name: Apply Basalam SKU and category guards
+
+on:
+  push:
+    branches: [codex/basalam-sku-category-guards]
+    paths:
+      - '.github/workflows/apply-basalam-sku-category-guards.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/basalam-sku-category-guards
+      - name: Patch and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('includes/BasalamSync.php')
+          s = p.read_text()
+
+          old = '''        $creating = !$map || (int)($map['basalam_product_id'] ?? 0) <= 0;
+        $warnings = [];
+
+        $payload = $this->buildProductPayload(
+'''
+          new = '''        $creating = !$map || (int)($map['basalam_product_id'] ?? 0) <= 0;
+        $warnings = [];
+        $attributeCategoryId = (int)$categoryMap['basalam_category_id'];
+
+        // Existing Basalam products cannot always change category. Build product
+        // attributes against the product's real Basalam category, not a newer Woo
+        // mapping, otherwise Basalam rejects the update with product_attribute 422.
+        if (!$creating) {
+            $existingBasalam = $this->basalam->getProduct((int)$map['basalam_product_id'], true);
+            if (!$existingBasalam['error']) {
+                $actualCategoryId = (int)(
+                    $existingBasalam['body']['category']['id']
+                    ?? $existingBasalam['body']['category_id']
+                    ?? 0
+                );
+                if ($actualCategoryId > 0) {
+                    if ($actualCategoryId !== $attributeCategoryId) {
+                        $warnings[] = sprintf(
+                            'دسته محصول باسلام #%d با دسته نگاشت‌شده Woo متفاوت است؛ ویژگی‌ها بر اساس دسته فعلی باسلام سینک شدند و دسته به‌صورت خودکار تغییر نکرد.',
+                            $actualCategoryId
+                        );
+                    }
+                    $attributeCategoryId = $actualCategoryId;
+                }
+            }
+        }
+
+        $payload = $this->buildProductPayload(
+'''
+          if old not in s:
+              raise SystemExit('syncProduct creating block target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''                (int)$categoryMap['basalam_category_id'],
+                $creating ? null : (int)($map['basalam_product_id'] ?? 0)
+'''
+          new = '''                $attributeCategoryId,
+                $creating ? null : (int)($map['basalam_product_id'] ?? 0)
+'''
+          if old not in s:
+              raise SystemExit('attribute mapper category target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        if (($product['type'] ?? 'simple') === 'variable') {
+            if ($includeVariants) {
+                $payload['variants'] = array_values(array_filter(array_map(
+                    fn(array $variation) => $this->buildVariantPayload($variation, $priceMultiplier),
+                    $variations
+                )));
+            }
+        } else {
+'''
+          new = '''        if (($product['type'] ?? 'simple') === 'variable') {
+            if ($includeVariants) {
+                $variationSkuCounts = [];
+                foreach ($variations as $variation) {
+                    $variationSku = trim((string)($variation['sku'] ?? ''));
+                    if ($variationSku !== '') {
+                        $variationSkuCounts[$variationSku] = ($variationSkuCounts[$variationSku] ?? 0) + 1;
+                    }
+                }
+
+                $payload['variants'] = array_values(array_filter(array_map(
+                    function(array $variation) use ($priceMultiplier, $sku, $variationSkuCounts) {
+                        $variantPayload = $this->buildVariantPayload($variation, $priceMultiplier);
+                        if ($variantPayload === null) {
+                            return null;
+                        }
+
+                        $variationSku = trim((string)($variantPayload['sku'] ?? ''));
+                        if (
+                            $variationSku !== ''
+                            && ($variationSku === $sku || ($variationSkuCounts[$variationSku] ?? 0) > 1)
+                        ) {
+                            unset($variantPayload['sku']);
+                        }
+                        return $variantPayload;
+                    },
+                    $variations
+                )));
+            }
+        } else {
+'''
+          if old not in s:
+              raise SystemExit('create variants target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''        $existingMaps = $this->getVariationMapsByProduct($wcProductId);
+        $used = [];
+'''
+          new = '''        $existingMaps = $this->getVariationMapsByProduct($wcProductId);
+        $used = [];
+        $basalamParentSku = trim((string)($productRes['body']['sku'] ?? ''));
+'''
+          if old not in s:
+              raise SystemExit('variation parent sku target not found')
+          s = s.replace(old, new, 1)
+
+          old = '''            if ($sku !== '' && ($skuCounts[$sku] ?? 0) === 1) {
+                $update['sku'] = $sku;
+            }
+'''
+          new = '''            if (
+                $sku !== ''
+                && ($skuCounts[$sku] ?? 0) === 1
+                && $sku !== $basalamParentSku
+            ) {
+                $update['sku'] = $sku;
+            }
+'''
+          if old not in s:
+              raise SystemExit('variation sku update target not found')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+          php -l includes/BasalamSync.php
+      - name: Commit source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-basalam-sku-category-guards.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/BasalamSync.php .github/workflows/apply-basalam-sku-category-guards.yml
+          git commit -m "Guard Basalam SKU and category updates"
+          git push origin HEAD:codex/basalam-sku-category-guards
