@@ -1,0 +1,84 @@
+name: Apply Basalam Update Guard
+
+on:
+  push:
+    branches: [codex/basalam-update-immutable-category]
+    paths:
+      - '.github/workflows/apply-basalam-update-guard.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/basalam-update-immutable-category
+      - name: Patch Basalam update handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('includes/BasalamClient.php')
+          s = p.read_text()
+          old = """    public function updateProduct(int $productId, array $data): array
+    {
+        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+    }
+"""
+          new = """    public function updateProduct(int $productId, array $data): array
+    {
+        // Basalam does not allow changing category_id after a product is created.
+        // Existing Woo→Basalam mappings may use a newer Woo category mapping, so
+        // never send category_id on PATCH; creation still sends it normally.
+        unset($data['category_id']);
+        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+    }
+"""
+          if old not in s:
+              raise SystemExit('updateProduct target not found')
+          s = s.replace(old, new, 1)
+
+          marker = """        if (!empty($body['errors']) && is_array($body['errors'])) {
+"""
+          insert = """        if (!empty($body['messages']) && is_array($body['messages'])) {
+            $messages = [];
+            foreach ($body['messages'] as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $message = trim((string)($item['message'] ?? ''));
+                if ($message === '') {
+                    continue;
+                }
+                $fields = array_values(array_filter(array_map(
+                    static fn($field) => trim((string)$field),
+                    (array)($item['fields'] ?? [])
+                )));
+                $messages[] = $fields ? implode(', ', $fields) . ': ' . $message : $message;
+            }
+            if ($messages) {
+                return implode(' | ', $messages);
+            }
+        }
+
+"""
+          if marker not in s:
+              raise SystemExit('extractApiError target not found')
+          s = s.replace(marker, insert + marker, 1)
+          p.write_text(s)
+          PY
+          php -l includes/BasalamClient.php
+      - name: Commit source fix and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-basalam-update-guard.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add includes/BasalamClient.php .github/workflows/apply-basalam-update-guard.yml
+          git commit -m "Fix Basalam updates for immutable categories"
+          git push origin HEAD:codex/basalam-update-immutable-category
