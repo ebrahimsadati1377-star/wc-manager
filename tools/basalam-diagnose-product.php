@@ -23,6 +23,14 @@ $out = [
     'basalam_vendor_id' => $basalam->getVendorId(),
 ];
 
+$productMap = $sync->getProductMap($productId);
+$out['sync_map'] = $productMap ? [
+    'basalam_product_id' => isset($productMap['basalam_product_id']) ? (int)$productMap['basalam_product_id'] : null,
+    'sync_status' => (string)($productMap['sync_status'] ?? ''),
+    'sync_error' => (string)($productMap['sync_error'] ?? ''),
+    'last_synced_at' => (string)($productMap['last_synced_at'] ?? ''),
+] : null;
+
 $productRes = $wc->getProduct($productId);
 if ($productRes['error']) {
     $out['woo_error'] = $productRes['error'];
