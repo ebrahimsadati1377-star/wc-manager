@@ -28,7 +28,6 @@ if (is_array($groups)) {
                 'id' => $attribute['id'] ?? null,
                 'title' => $attribute['title'] ?? null,
                 'value' => $attribute['value'] ?? null,
-                'selected_values' => $attribute['selected_values'] ?? null,
                 'required' => $attribute['required'] ?? null,
             ];
         }
@@ -50,13 +49,11 @@ $out = [
         'status' => $productRes['status'] ?? 0,
         'error' => $productRes['error'] ?? null,
         'attributes' => $body['attributes'] ?? null,
-        'product_attribute' => $body['product_attribute'] ?? null,
-        'revision_attributes' => $body['revision']['data']['attributes'] ?? null,
     ],
 ];
 
 $json = json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 if (!is_string($json)) $json = '{}';
-echo 'ATTR_VERIFY_B64=' . base64_encode($json) . PHP_EOL;
+echo 'ATTR_VERIFY_JSON=' . $json . PHP_EOL;
 
 if (empty($syncResult['success'])) exit(2);
