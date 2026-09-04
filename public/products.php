@@ -133,6 +133,31 @@ require __DIR__ . '/partials/header.php';
 .desktop-basalam-sync { margin-top: .5rem; }
 .desktop-basalam-sync-time { margin-top: .25rem; color: #6c757d; font-size: .72rem; }
 
+.unified-product-tabs{display:flex;gap:.5rem;overflow-x:auto;padding:.2rem 0 .8rem;scrollbar-width:none}
+.unified-product-tabs::-webkit-scrollbar{display:none}
+.unified-product-tab{border:1px solid #dee2e6;background:#fff;border-radius:999px;padding:.65rem .9rem;white-space:nowrap;min-height:44px;font-weight:700;color:#495057}
+.unified-product-tab.active{background:#0d6efd;border-color:#0d6efd;color:#fff}
+.unified-product-tab .count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;border-radius:999px;background:rgba(0,0,0,.07);font-size:.75rem;margin-right:.35rem;padding:0 .35rem}
+.unified-product-tab.active .count{background:rgba(255,255,255,.2)}
+.unified-basalam-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.85rem}
+.unified-basalam-card{background:#fff;border:1px solid #e7e9ec;border-radius:1rem;padding:1rem;box-shadow:0 .125rem .35rem rgba(0,0,0,.04)}
+.unified-basalam-head{display:flex;gap:.8rem;align-items:flex-start}
+.unified-basalam-thumb{width:72px;height:72px;border-radius:.8rem;object-fit:cover;background:#f3f4f6;flex:0 0 72px}
+.unified-basalam-title{font-weight:800;line-height:1.65}
+.unified-basalam-meta{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;margin-top:.85rem}
+.unified-basalam-meta>div{background:#f8f9fa;border-radius:.7rem;padding:.6rem .7rem}
+.unified-basalam-meta small{display:block;color:#6c757d;margin-bottom:.15rem}
+.unified-basalam-actions{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.85rem}
+.unified-basalam-actions .btn{min-height:40px}
+.unified-detail-box{background:#fff8e1;border-radius:.7rem;padding:.75rem;margin-top:.75rem;line-height:1.8}
+.app-inline-notice{position:sticky;top:76px;z-index:1020}
+@media(max-width:767.98px){
+  .unified-basalam-grid{grid-template-columns:1fr}
+  .unified-product-tabs{margin-left:-.25rem;margin-right:-.25rem;padding-left:.25rem;padding-right:.25rem}
+  .unified-basalam-actions{display:grid;grid-template-columns:1fr 1fr}
+  .unified-basalam-actions .btn{width:100%}
+}
+
 @media (max-width: 767.98px) {
     .products-heading { align-items: stretch !important; flex-direction: column; }
     .products-heading .btn { width: 100%; }
@@ -156,6 +181,16 @@ require __DIR__ . '/partials/header.php';
   <a href="product_edit.php" class="btn btn-primary"><i class="fas fa-plus ms-1"></i> افزودن محصول جدید</a>
 </div>
 
+<div class="unified-product-tabs mb-2" id="unifiedProductTabs" aria-label="نمای محصولات">
+            <button type="button" class="unified-product-tab active" data-scope="site">سایت <span class="count"><?= (int)$total ?></span></button>
+            <button type="button" class="unified-product-tab" data-scope="linked">متصل به باسلام <span class="count" data-stat="linked">…</span></button>
+            <button type="button" class="unified-product-tab" data-scope="candidate">ادغام‌نشده <span class="count" data-stat="candidate">…</span></button>
+            <button type="button" class="unified-product-tab" data-scope="basalam_only">فقط باسلام <span class="count" data-stat="basalam_only">…</span></button>
+            <button type="button" class="unified-product-tab" data-scope="rejected">ردشده <span class="count" data-stat="rejected">…</span></button>
+          </div>
+          <div id="appInlineNotice" class="app-inline-notice"></div>
+
+<div id="wooProductsView">
 <?php if ($loadError): ?>
   <div class="alert alert-danger"><?= e($loadError) ?></div>
 <?php else: ?>
@@ -393,8 +428,192 @@ require __DIR__ . '/partials/header.php';
 
 <?php endif; ?>
 <?php endif; ?>
+</div>
+
+<div id="unifiedBasalamPanel" class="d-none">
+  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+    <div>
+      <h5 class="mb-1" id="unifiedPanelTitle">باسلام</h5>
+      <div class="small text-muted" id="unifiedPanelSubtitle"></div>
+    </div>
+    <?php if (Auth::isAdmin()): ?><a href="basalam.php" class="btn btn-sm btn-outline-secondary"><i class="fas fa-gear"></i> تنظیمات</a><?php endif; ?>
+  </div>
+  <div id="unifiedBasalamContent"></div>
+</div>
 
 <script>
+const appNotice = document.getElementById('appInlineNotice');
+function showAppNotice(message, ok = true) {
+  if (!appNotice) return;
+  appNotice.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger') + ' alert-dismissible fade show shadow-sm';
+  box.setAttribute('role', 'status');
+  box.textContent = message;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'btn-close';
+  close.setAttribute('data-bs-dismiss', 'alert');
+  box.appendChild(close);
+  appNotice.appendChild(box);
+}
+
+function escapeAppHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[ch]));
+}
+
+const scopeTitles = {
+  linked: ['محصولات متصل به باسلام', 'این محصولات به یک محصول Woo متصل هستند.'],
+  candidate: ['در سایت هست؛ ادغام نشده', 'تطبیق مطمئن بر اساس SKU یا عنوان دقیق پیدا شده ولی هنوز اتصال ثبت نشده است.'],
+  basalam_only: ['فقط در باسلام', 'در سایت معادل مطمئنی برای این محصولات پیدا نشده است.'],
+  rejected: ['محصولات ردشده باسلام', 'دلیل رد، اصلاح تصویر و بروزرسانی از همین صفحه قابل انجام است.']
+};
+
+async function loadUnifiedBasalam(scope, silent = false) {
+  const panel = document.getElementById('unifiedBasalamPanel');
+  const content = document.getElementById('unifiedBasalamContent');
+  const woo = document.getElementById('wooProductsView');
+  const title = document.getElementById('unifiedPanelTitle');
+  const subtitle = document.getElementById('unifiedPanelSubtitle');
+  if (!panel || !content || !woo) return;
+
+  if (scope === 'site') {
+    panel.classList.add('d-none');
+    woo.classList.remove('d-none');
+    return;
+  }
+
+  woo.classList.add('d-none');
+  panel.classList.remove('d-none');
+  const copy = scopeTitles[scope] || ['باسلام', ''];
+  title.textContent = copy[0];
+  subtitle.textContent = copy[1];
+  if (!silent) content.innerHTML = '<div class="card border-0 shadow-sm"><div class="card-body py-5 text-center text-muted"><span class="spinner-border spinner-border-sm ms-2"></span>در حال خواندن باسلام…</div></div>';
+
+  const fd = new FormData();
+  fd.append('scope', scope);
+  const response = await fetch('ajax/basalam_unified_catalog.php', {method:'POST', body:fd});
+  const data = await response.json();
+  if (!response.ok || !data.success) throw new Error(data.message || 'خواندن باسلام ناموفق بود.');
+  updateUnifiedStats(data.stats || {});
+  renderUnifiedBasalam(scope, data.products || []);
+}
+
+function updateUnifiedStats(stats) {
+  document.querySelectorAll('[data-stat]').forEach(el => {
+    const key = el.dataset.stat;
+    if (Object.prototype.hasOwnProperty.call(stats, key)) el.textContent = stats[key];
+  });
+}
+
+function marketBadgeClass(key) {
+  return ({available:'success',pending:'warning',rejected:'danger',unpublished:'secondary',inactive:'dark'})[key] || 'secondary';
+}
+
+function relationBadgeClass(key) {
+  return ({linked:'info',candidate:'warning',basalam_only:'secondary'})[key] || 'secondary';
+}
+
+function renderUnifiedBasalam(scope, items) {
+  const content = document.getElementById('unifiedBasalamContent');
+  if (!items.length) {
+    content.innerHTML = '<div class="card border-0 shadow-sm"><div class="card-body py-5 text-center text-muted">موردی در این بخش وجود ندارد.</div></div>';
+    return;
+  }
+  let html = '<div class="unified-basalam-grid">';
+  items.forEach(item => {
+    const market = item.market || {};
+    const relation = item.relation || {};
+    const photo = item.photo ? '<img class="unified-basalam-thumb" src="' + escapeAppHtml(item.photo) + '" alt="" loading="lazy">' : '<div class="unified-basalam-thumb d-flex align-items-center justify-content-center text-muted">—</div>';
+    const wooId = Number(relation.woo_id || 0);
+    html += '<article class="unified-basalam-card" id="unified-card-' + item.basalam_id + '">';
+    html += '<div class="unified-basalam-head">' + photo + '<div class="flex-grow-1 min-w-0"><div class="unified-basalam-title">' + escapeAppHtml(item.name) + '</div><div class="small text-muted">Basalam #' + item.basalam_id + '</div><div class="d-flex gap-1 flex-wrap mt-2"><span class="badge text-bg-' + marketBadgeClass(market.key) + '">' + escapeAppHtml(market.label || market.key) + '</span><span class="badge text-bg-' + relationBadgeClass(relation.key) + '">' + escapeAppHtml(relation.label || '') + '</span></div></div></div>';
+    html += '<div class="unified-basalam-meta"><div><small>SKU</small><strong dir="ltr">' + escapeAppHtml(item.sku || '-') + '</strong></div><div><small>ارتباط سایت</small><strong>' + (wooId ? 'Woo #' + wooId : 'ندارد') + '</strong></div><div><small>قابل نمایش</small><strong>' + (item.showable === null ? '—' : (item.showable ? 'بله' : 'خیر')) + '</strong></div><div><small>قابل خرید</small><strong>' + (item.available === null ? '—' : (item.available ? 'بله' : 'خیر')) + '</strong></div></div>';
+    html += '<div class="unified-basalam-actions">';
+    html += '<a class="btn btn-outline-secondary btn-sm" href="https://basalam.com/p/' + item.basalam_id + '" target="_blank" rel="noopener noreferrer"><i class="fas fa-arrow-up-right-from-square"></i> باسلام</a>';
+    if (wooId) html += '<a class="btn btn-outline-primary btn-sm" href="product_edit.php?id=' + wooId + '"><i class="fas fa-pen"></i> ویرایش سایت</a>';
+    if (relation.key === 'linked' && wooId) html += '<button type="button" class="btn btn-outline-success btn-sm unified-sync-btn" data-wc-id="' + wooId + '"><i class="fas fa-rotate"></i> بروزرسانی باسلام</button>';
+    if (relation.key === 'candidate' && wooId) html += '<button type="button" class="btn btn-warning btn-sm unified-link-btn" data-wc-id="' + wooId + '" data-basalam-id="' + item.basalam_id + '"><i class="fas fa-link"></i> اتصال به Woo #' + wooId + '</button>';
+    if (market.key === 'rejected') html += '<button type="button" class="btn btn-outline-warning btn-sm unified-reason-btn" data-basalam-id="' + item.basalam_id + '"><i class="fas fa-circle-info"></i> دلیل رد</button>';
+    if (market.key === 'rejected' && relation.key === 'linked' && wooId) html += '<button type="button" class="btn btn-outline-danger btn-sm unified-fix-image-btn" data-wc-id="' + wooId + '"><i class="fas fa-crop-simple"></i> اصلاح عکس</button>';
+    html += '</div><div class="unified-detail-box d-none" id="unified-detail-' + item.basalam_id + '"></div></article>';
+  });
+  html += '</div>';
+  content.innerHTML = html;
+  bindUnifiedActions(scope);
+}
+
+function bindUnifiedActions(scope) {
+  document.querySelectorAll('.unified-sync-btn').forEach(btn => btn.addEventListener('click', async function(){
+    const old = this.innerHTML; this.disabled = true; this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    try {
+      const fd = new FormData(); fd.append('id', this.dataset.wcId); fd.append('force','1');
+      const r = await fetch('ajax/basalam_sync_product.php',{method:'POST',body:fd}); const d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.message || 'بروزرسانی ناموفق بود.');
+      showAppNotice(d.message || 'بروزرسانی باسلام انجام شد.', true);
+    } catch(e) { showAppNotice(e.message || 'بروزرسانی ناموفق بود.', false); }
+    finally { this.disabled=false; this.innerHTML=old; }
+  }));
+
+  document.querySelectorAll('.unified-link-btn').forEach(btn => btn.addEventListener('click', async function(){
+    if (!confirm('این محصول باسلام به Woo #' + this.dataset.wcId + ' متصل شود؟')) return;
+    const old = this.innerHTML; this.disabled = true; this.textContent = 'در حال اتصال…';
+    try {
+      const fd = new FormData(); fd.append('wc_product_id',this.dataset.wcId); fd.append('basalam_product_id',this.dataset.basalamId);
+      const r = await fetch('ajax/basalam_link_candidate.php',{method:'POST',body:fd}); const d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.message || 'اتصال ناموفق بود.');
+      showAppNotice(d.message || 'اتصال انجام شد.', true);
+      await loadUnifiedBasalam(scope, true);
+    } catch(e) { showAppNotice(e.message || 'اتصال ناموفق بود.', false); this.disabled=false; this.innerHTML=old; }
+  }));
+
+  document.querySelectorAll('.unified-reason-btn').forEach(btn => btn.addEventListener('click', async function(){
+    const box = document.getElementById('unified-detail-' + this.dataset.basalamId);
+    if (!box) return;
+    if (box.dataset.loaded === '1') { box.classList.toggle('d-none'); return; }
+    const old = this.innerHTML; this.disabled=true; this.textContent='در حال خواندن…';
+    try {
+      const r = await fetch('ajax/basalam_product_status_detail.php?id=' + encodeURIComponent(this.dataset.basalamId)); const d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.message || 'دلیل رد دریافت نشد.');
+      const reasons = Array.isArray(d.reasons) ? d.reasons : [];
+      let h = d.message ? '<div class="mb-2">' + escapeAppHtml(d.message).replace(/\n/g,'<br>') + '</div>' : '';
+      if (reasons.length) h += '<strong>دلیل باسلام:</strong><ul class="mb-0 mt-1">' + reasons.map(x => '<li>' + escapeAppHtml(x) + '</li>').join('') + '</ul>';
+      if (!h) h = '<span class="text-muted">جزئیات بیشتری از API برنگشت.</span>';
+      box.innerHTML=h; box.dataset.loaded='1'; box.classList.remove('d-none');
+    } catch(e) { showAppNotice(e.message || 'دلیل رد دریافت نشد.', false); }
+    finally { this.disabled=false; this.innerHTML=old; }
+  }));
+
+  document.querySelectorAll('.unified-fix-image-btn').forEach(btn => btn.addEventListener('click', async function(){
+    if (!confirm('نسخه مخصوص باسلام از تصاویر این محصول ساخته و دوباره ارسال شود؟ عکس‌های سایت تغییر نمی‌کنند.')) return;
+    const old=this.innerHTML; this.disabled=true; this.textContent='در حال اصلاح…';
+    try {
+      const fd=new FormData(); fd.append('wc_product_id',this.dataset.wcId); fd.append('crop_top_percent','36');
+      const r=await fetch('ajax/basalam_prepare_safe_images.php',{method:'POST',body:fd}); const d=await r.json();
+      if (!r.ok || !d.success) throw new Error(d.message || 'اصلاح تصویر ناموفق بود.');
+      showAppNotice(d.message || 'تصاویر مخصوص باسلام آماده و ارسال شدند.', true);
+    } catch(e) { showAppNotice(e.message || 'اصلاح تصویر ناموفق بود.', false); }
+    finally { this.disabled=false; this.innerHTML=old; }
+  }));
+}
+
+document.querySelectorAll('.unified-product-tab').forEach(tab => {
+  tab.addEventListener('click', async function(){
+    document.querySelectorAll('.unified-product-tab').forEach(x => x.classList.remove('active'));
+    this.classList.add('active');
+    const scope=this.dataset.scope || 'site';
+    try { await loadUnifiedBasalam(scope); } catch(e) { showAppNotice(e.message || 'بارگذاری ناموفق بود.', false); }
+  });
+});
+
+(async () => {
+  try {
+    const fd=new FormData(); fd.append('scope','stats');
+    const r=await fetch('ajax/basalam_unified_catalog.php',{method:'POST',body:fd}); const d=await r.json();
+    if (r.ok && d.success) updateUnifiedStats(d.stats || {});
+  } catch(e) {}
+})();
+
 document.querySelectorAll('.basalam-update-btn').forEach(button => {
   button.addEventListener('click', async function () {
     const id = this.dataset.id;
@@ -422,9 +641,9 @@ document.querySelectorAll('.basalam-update-btn').forEach(button => {
       const warningText = Array.isArray(data.warnings) && data.warnings.length
         ? '\n\nهشدار: ' + data.warnings.join(' | ')
         : '';
-      alert((data.message || 'بروزرسانی باسلام انجام شد.') + warningText);
+      showAppNotice((data.message || 'بروزرسانی باسلام انجام شد.') + warningText, true);
     } catch (error) {
-      alert(error.message || 'بروزرسانی باسلام ناموفق بود.');
+      showAppNotice(error.message || 'بروزرسانی باسلام ناموفق بود.', false);
     } finally {
       this.innerHTML = originalHtml;
       buttons.forEach(btn => btn.disabled = false);
