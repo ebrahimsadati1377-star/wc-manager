@@ -1,0 +1,96 @@
+name: Finish remaining first Basalam category batch
+on:
+  push:
+    branches: [tmp/test-basalam-sku-fallback]
+    paths:
+      - '.github/workflows/finish-first-category-batch.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Prepare and migrate Woo 1008 and 1050
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/finish.php <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $client = new BasalamClient();
+          $migrator = new BasalamCategoryMigrator();
+          $targets = [1008 => 57614384, 1050 => 57614412];
+          $allOk = true;
+          foreach ($targets as $wcId => $oldId) {
+              $sync = new BasalamSync();
+              $map = $sync->getProductMap($wcId);
+              if ((int)($map['basalam_product_id'] ?? 0) !== $oldId) {
+                  echo 'SKIP=' . json_encode(['wc_product_id'=>$wcId,'reason'=>'mapping already moved','map'=>$map], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+                  continue;
+              }
+              $woo = (new WooCommerceClient())->getProduct($wcId);
+              if ($woo['error']) { echo 'ERROR='.$woo['error'].PHP_EOL; $allOk=false; continue; }
+              $title = (string)($woo['body']['name'] ?? '');
+              $legacyTitle = $title . ' - قدیمی #' . $oldId;
+              $prep = $client->updateProduct($oldId, ['name'=>$legacyTitle,'status'=>3790,'sku'=>null]);
+              echo 'PREP=' . json_encode(['wc_product_id'=>$wcId,'result'=>$prep], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              if ($prep['error']) { $allOk=false; continue; }
+
+              $read = $client->getProduct($oldId, true);
+              if (!$read['error']) {
+                  foreach ((array)($read['body']['variants'] ?? $read['body']['variant'] ?? []) as $v) {
+                      $vid=(int)($v['id']??0);
+                      if ($vid<=0 || trim((string)($v['sku']??''))==='') continue;
+                      $vr=$client->updateProductVariation($oldId,$vid,['sku'=>null]);
+                      if ($vr['error']) $vr=$client->updateProductVariation($oldId,$vid,['sku'=>'']);
+                      echo 'VARIANT_RELEASE=' . json_encode(['wc_product_id'=>$wcId,'variation_id'=>$vid,'result'=>$vr], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+                  }
+              }
+
+              $ready=false;
+              $state=[];
+              for ($attempt=0;$attempt<25;$attempt++) {
+                  if ($attempt>0) sleep(1);
+                  $r=$client->getProduct($oldId,true);
+                  if ($r['error']) continue;
+                  $b=(array)$r['body'];
+                  $name=(string)($b['name']??$b['title']??'');
+                  $inactive=empty($b['is_showable']) && empty($b['is_available']);
+                  $parentFree=trim((string)($b['sku']??''))==='';
+                  $variantsFree=true;
+                  foreach ((array)($b['variants']??$b['variant']??[]) as $v) {
+                      if (trim((string)($v['sku']??''))!=='') { $variantsFree=false; break; }
+                  }
+                  $state=['name'=>$name,'status'=>$b['status']??null,'inactive'=>$inactive,'parent_sku_free'=>$parentFree,'variant_skus_free'=>$variantsFree];
+                  if ($name === $legacyTitle && $inactive && $parentFree && $variantsFree) { $ready=true; break; }
+              }
+              echo 'READY=' . json_encode(['wc_product_id'=>$wcId,'ready'=>$ready,'state'=>$state], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              if (!$ready) { $allOk=false; continue; }
+
+              $result=$migrator->migrateProduct($wcId);
+              echo 'MIGRATE=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              if (empty($result['success'])) $allOk=false;
+          }
+          $after=$migrator->dryRun();
+          echo 'AFTER=' . json_encode($after, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if (!$allOk) exit(3);
+          PHP
+          base64 -w0 /tmp/finish.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
