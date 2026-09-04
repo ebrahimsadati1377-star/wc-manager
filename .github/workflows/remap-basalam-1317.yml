@@ -31,7 +31,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Validate candidate, remap, and sync
+      - name: Validate candidate, free legacy SKU, and sync
         shell: bash
         run: |
           set -euo pipefail
@@ -50,6 +50,7 @@ jobs:
 
           $wcId = 1317;
           $candidateId = 57616386;
+          $legacyId = 54246762;
           $expectedCategoryId = 239;
           $db = Database::get();
           $wc = new WooCommerceClient();
@@ -59,55 +60,71 @@ jobs:
           $wooRes = $wc->getProduct($wcId);
           if ($wooRes['error']) throw new RuntimeException('Woo read failed: ' . $wooRes['error']);
           $woo = (array)$wooRes['body'];
+          $wooTitle = (string)($woo['name'] ?? '');
+          $wooSku = trim((string)($woo['sku'] ?? ''));
+
           $candidateRes = $client->getProduct($candidateId, true);
           if ($candidateRes['error']) throw new RuntimeException('Candidate read failed: ' . $candidateRes['error']);
           $candidate = (array)$candidateRes['body'];
-
-          $wooTitle = (string)($woo['name'] ?? '');
           $candidateTitle = (string)($candidate['name'] ?? $candidate['title'] ?? '');
           $candidateCategory = (int)($candidate['category']['id'] ?? $candidate['category_id'] ?? 0);
-          if (normTitle($wooTitle) !== normTitle($candidateTitle)) {
-              throw new RuntimeException('Title mismatch; refusing remap: ' . $wooTitle . ' <> ' . $candidateTitle);
-          }
-          if ($candidateCategory !== $expectedCategoryId) {
-              throw new RuntimeException('Candidate category mismatch; refusing remap: ' . $candidateCategory);
+          if (normTitle($wooTitle) !== normTitle($candidateTitle) || $candidateCategory !== $expectedCategoryId) {
+              throw new RuntimeException('Candidate validation failed; refusing changes.');
           }
 
+          $map = $sync->getProductMap($wcId);
+          if ((int)($map['basalam_product_id'] ?? 0) !== $candidateId) {
+              throw new RuntimeException('Woo product is not currently mapped to the validated candidate.');
+          }
           $used = $db->prepare('SELECT wc_product_id FROM basalam_product_map WHERE basalam_product_id=:id LIMIT 1');
           $used->execute(['id'=>$candidateId]);
-          $usedBy = $used->fetchColumn();
-          if ($usedBy !== false && (int)$usedBy !== $wcId) {
-              throw new RuntimeException('Candidate already mapped to Woo #' . (int)$usedBy);
+          if ((int)$used->fetchColumn() !== $wcId) {
+              throw new RuntimeException('Candidate mapping ownership validation failed.');
           }
 
-          $before = $sync->getProductMap($wcId);
-          echo 'BEFORE=' . json_encode($before, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          echo 'CANDIDATE=' . json_encode(['id'=>$candidateId,'name'=>$candidateTitle,'category_id'=>$candidateCategory], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          $legacyRes = $client->getProduct($legacyId, true);
+          if ($legacyRes['error']) throw new RuntimeException('Legacy product read failed: ' . $legacyRes['error']);
+          $legacy = (array)$legacyRes['body'];
+          $legacySku = trim((string)($legacy['sku'] ?? ''));
+          $legacyCategory = (int)($legacy['category']['id'] ?? $legacy['category_id'] ?? 0);
+          $legacyShowable = (bool)($legacy['is_showable'] ?? false);
+          $legacyAvailable = (bool)($legacy['is_available'] ?? false);
+          $legacyVariants = (array)($legacy['variants'] ?? []);
+          $legacyUsed = $db->prepare('SELECT wc_product_id FROM basalam_product_map WHERE basalam_product_id=:id LIMIT 1');
+          $legacyUsed->execute(['id'=>$legacyId]);
+          $legacyMappedTo = $legacyUsed->fetchColumn();
 
-          $db->beginTransaction();
-          try {
-              $stmt = $db->prepare(
-                  'UPDATE basalam_product_map SET basalam_product_id=:basalam,last_wc_hash=NULL,sync_status=:status,sync_error=:error,last_synced_at=NULL WHERE wc_product_id=:wc'
-              );
-              $stmt->execute([
-                  'basalam'=>$candidateId,
-                  'status'=>'matched',
-                  'error'=>'Safe remap to exact-title existing Basalam product in correct category',
-                  'wc'=>$wcId,
-              ]);
-              if ($stmt->rowCount() < 1) throw new RuntimeException('Product map row not found');
-              $delete = $db->prepare('DELETE FROM basalam_variation_map WHERE wc_product_id=:wc');
-              $delete->execute(['wc'=>$wcId]);
-              $db->commit();
-          } catch (Throwable $e) {
-              if ($db->inTransaction()) $db->rollBack();
-              throw $e;
+          if (
+              normTitle((string)($legacy['name'] ?? $legacy['title'] ?? '')) !== normTitle($wooTitle)
+              || $legacyCategory !== $expectedCategoryId
+              || $legacyShowable
+              || $legacyAvailable
+              || $legacyVariants
+              || $legacyMappedTo !== false
+              || $wooSku === ''
+              || $legacySku !== $wooSku
+          ) {
+              throw new RuntimeException('Legacy duplicate is not safe to modify; refusing SKU release.');
           }
+
+          echo 'LEGACY_BEFORE=' . json_encode([
+              'id'=>$legacyId,'sku'=>$legacySku,'is_showable'=>$legacyShowable,'is_available'=>$legacyAvailable,
+              'status'=>$legacy['status']??null
+          ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          // Release the SKU only from the inactive, unmapped duplicate. Nothing is deleted.
+          $clear = $client->updateProduct($legacyId, ['sku'=>'']);
+          if ($clear['error']) throw new RuntimeException('Clearing legacy SKU failed: ' . $clear['error']);
+          $legacyAfterRes = $client->getProduct($legacyId, true);
+          if ($legacyAfterRes['error']) throw new RuntimeException('Legacy verification failed: ' . $legacyAfterRes['error']);
+          $legacyAfterSku = trim((string)($legacyAfterRes['body']['sku'] ?? ''));
+          echo 'LEGACY_AFTER=' . json_encode(['id'=>$legacyId,'sku'=>$legacyAfterSku], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          if ($legacyAfterSku !== '') throw new RuntimeException('Legacy SKU was not cleared.');
 
           $result = $sync->syncProduct($wcId, true);
           echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
           echo 'AFTER=' . json_encode($sync->getProductMap($wcId), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-          if (empty($result['success'])) throw new RuntimeException('Sync failed after remap: ' . ($result['message'] ?? 'unknown'));
+          if (empty($result['success'])) throw new RuntimeException('Sync failed after safe SKU release: ' . ($result['message'] ?? 'unknown'));
           foreach ((array)($result['warnings'] ?? []) as $warning) {
               if (str_contains((string)$warning, 'دسته محصول باسلام')) {
                   throw new RuntimeException('Category mismatch warning remained after remap: ' . $warning);
