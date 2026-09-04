@@ -1,0 +1,178 @@
+name: Audit Basalam mapped product categories
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/audit-basalam-category-mappings.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Audit mapped Woo and Basalam categories
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+
+          function normTitle(string $title): string {
+              $title = html_entity_decode(strip_tags($title), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+              $title = str_replace(["\u{200c}","\u{200d}","\u{200e}","\u{200f}",'ي','ى','ك','ة','ۀ'],['','','','','ی','ی','ک','ه','ه'],$title);
+              $title = function_exists('mb_strtolower') ? mb_strtolower($title, 'UTF-8') : strtolower($title);
+              $title = preg_replace('/[^\p{L}\p{N}]+/u',' ', $title) ?? $title;
+              return preg_replace('/\s+/u',' ', trim($title)) ?? trim($title);
+          }
+
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+          $db = Database::get();
+          $catRef = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
+          $catRef->setAccessible(true);
+
+          // Build a vendor-catalog title index so mismatches can show existing
+          // same-title candidates before any replacement product is considered.
+          $vendorProducts = [];
+          $byNormalizedTitle = [];
+          for ($page = 1; $page <= 10; $page++) {
+              $res = $client->getVendorProducts(['page' => $page, 'per_page' => 100]);
+              if ($res['error']) {
+                  echo 'VENDOR_LIST_ERROR=' . $res['error'] . PHP_EOL;
+                  break;
+              }
+              $body = $res['body'] ?? [];
+              $batch = $body['data'] ?? $body['products'] ?? $body;
+              if (!is_array($batch) || !$batch) break;
+              $count = 0;
+              foreach ($batch as $item) {
+                  if (!is_array($item)) continue;
+                  $id = (int)($item['id'] ?? 0);
+                  if ($id <= 0) continue;
+                  $count++;
+                  $vendorProducts[$id] = $item;
+                  $title = (string)($item['name'] ?? $item['title'] ?? '');
+                  $norm = normTitle($title);
+                  if ($norm !== '') $byNormalizedTitle[$norm][] = $item;
+              }
+              if ($count < 100) break;
+          }
+
+          $rows = $db->query(
+              'SELECT * FROM basalam_product_map WHERE basalam_product_id IS NOT NULL ORDER BY wc_product_id ASC'
+          )->fetchAll();
+
+          $summary = [
+              'mapped_total' => count($rows),
+              'checked' => 0,
+              'same_category' => 0,
+              'mismatch' => 0,
+              'woo_read_error' => 0,
+              'basalam_read_error' => 0,
+              'no_expected_category' => 0,
+              'same_title_candidate_sets' => 0,
+          ];
+          $mismatches = [];
+
+          foreach ($rows as $row) {
+              $wcId = (int)$row['wc_product_id'];
+              $basalamId = (int)$row['basalam_product_id'];
+              if ($wcId <= 0 || $basalamId <= 0) continue;
+
+              $wooRes = $wc->getProduct($wcId);
+              if ($wooRes['error']) {
+                  $summary['woo_read_error']++;
+                  echo 'READ_ERROR=' . json_encode(['wc_product_id'=>$wcId,'basalam_product_id'=>$basalamId,'side'=>'woo','error'=>$wooRes['error']], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+                  continue;
+              }
+              $woo = (array)$wooRes['body'];
+              $expected = $catRef->invoke($sync, $woo);
+              if (!$expected) {
+                  $summary['no_expected_category']++;
+                  echo 'NO_EXPECTED_CATEGORY=' . json_encode(['wc_product_id'=>$wcId,'woo_name'=>$woo['name']??'','basalam_product_id'=>$basalamId], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+                  continue;
+              }
+
+              $bRes = $client->getProduct($basalamId, true);
+              if ($bRes['error']) {
+                  $summary['basalam_read_error']++;
+                  echo 'READ_ERROR=' . json_encode(['wc_product_id'=>$wcId,'basalam_product_id'=>$basalamId,'side'=>'basalam','error'=>$bRes['error']], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+                  continue;
+              }
+              $bb = (array)$bRes['body'];
+              $actualId = (int)($bb['category']['id'] ?? $bb['category_id'] ?? 0);
+              $actualName = (string)($bb['category']['title'] ?? $bb['category']['name'] ?? '');
+              $expectedId = (int)($expected['basalam_category_id'] ?? 0);
+              $expectedName = (string)($expected['basalam_category_name'] ?? '');
+              $summary['checked']++;
+
+              if ($actualId === $expectedId) {
+                  $summary['same_category']++;
+                  continue;
+              }
+
+              $summary['mismatch']++;
+              $wooName = (string)($woo['name'] ?? '');
+              $norm = normTitle($wooName);
+              $candidates = [];
+              foreach (($byNormalizedTitle[$norm] ?? []) as $candidate) {
+                  $cid = (int)($candidate['id'] ?? 0);
+                  if ($cid <= 0) continue;
+                  // Use full product read to capture its real category when possible.
+                  $cr = $client->getProduct($cid, true);
+                  $cb = (array)($cr['body'] ?? []);
+                  $ccat = (int)($cb['category']['id'] ?? $cb['category_id'] ?? 0);
+                  $candidates[] = [
+                      'id' => $cid,
+                      'name' => (string)($candidate['name'] ?? $candidate['title'] ?? ''),
+                      'category_id' => $ccat,
+                      'category_name' => (string)($cb['category']['title'] ?? $cb['category']['name'] ?? ''),
+                      'is_current_mapping' => $cid === $basalamId,
+                      'is_expected_category' => $ccat === $expectedId,
+                  ];
+              }
+              if (count($candidates) > 1) $summary['same_title_candidate_sets']++;
+
+              $item = [
+                  'wc_product_id' => $wcId,
+                  'woo_name' => $wooName,
+                  'woo_sku' => (string)($woo['sku'] ?? ''),
+                  'basalam_product_id' => $basalamId,
+                  'expected_category_id' => $expectedId,
+                  'expected_category_name' => $expectedName,
+                  'actual_category_id' => $actualId,
+                  'actual_category_name' => $actualName,
+                  'sync_status' => (string)($row['sync_status'] ?? ''),
+                  'same_title_candidates' => $candidates,
+              ];
+              $mismatches[] = $item;
+              echo 'MISMATCH=' . json_encode($item, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          }
+
+          echo 'SUMMARY=' . json_encode($summary, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          echo 'MISMATCHES=' . json_encode($mismatches, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          PHP
