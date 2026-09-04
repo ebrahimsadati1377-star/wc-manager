@@ -82,7 +82,43 @@ class BasalamClient
         // Existing Woo→Basalam mappings may use a newer Woo category mapping, so
         // never send category_id on PATCH; creation still sends it normally.
         unset($data['category_id']);
-        return $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+
+        $result = $this->request('PATCH', '/v1/products/' . $productId, [], $data);
+
+        // Some legacy Basalam catalogs contain an old/inactive product that still
+        // owns the Woo SKU. For an already-mapped Basalam product, do not let that
+        // stale SKU block price/stock/content/image updates. Retry the same PATCH
+        // once without SKU. Creation is intentionally not affected by this rule.
+        if (
+            $result['status'] === 422
+            && !empty($result['error'])
+            && array_key_exists('sku', $data)
+            && trim((string)$data['sku']) !== ''
+            && str_contains((string)$result['error'], 'sku')
+            && str_contains((string)$result['error'], 'یکتا')
+        ) {
+            $retryData = $data;
+            $conflictingSku = trim((string)$retryData['sku']);
+            unset($retryData['sku']);
+
+            $retry = $this->request('PATCH', '/v1/products/' . $productId, [], $retryData);
+            if (!$retry['error']) {
+                logActivity(
+                    'basalam_update_sku_conflict',
+                    'product:' . $productId,
+                    sprintf(
+                        'Basalam #%d updated without duplicate SKU %s after 422 uniqueness conflict',
+                        $productId,
+                        $conflictingSku
+                    )
+                );
+                $retry['sku_conflict_ignored'] = true;
+                $retry['conflicting_sku'] = $conflictingSku;
+                return $retry;
+            }
+        }
+
+        return $result;
     }
 
     public function updateProductVariation(int $productId, int $variationId, array $data): array
