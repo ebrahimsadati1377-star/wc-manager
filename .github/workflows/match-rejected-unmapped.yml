@@ -1,0 +1,65 @@
+name: Match rejected unmapped Basalam products
+on:
+  push:
+    branches: [ops/inspect-basalam-rejected-unmapped]
+    paths:
+      - '.github/workflows/match-rejected-unmapped.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Search Woo products
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/match-rejected.php <<'PHP'
+          <?php
+          $root = rtrim((string)($argv[1] ?? ''), '/');
+          require $root . '/includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $queries = [
+              ['basalam'=>46649593,'q'=>'اورال الماس'],
+              ['basalam'=>46647909,'q'=>'شومیز نخی کمر گت'],
+              ['basalam'=>44442326,'q'=>'کت پانچو زنانه آرمانی'],
+          ];
+          $out = [];
+          foreach ($queries as $item) {
+              $r = $wc->get('products', ['search'=>$item['q'], 'per_page'=>100]);
+              $matches = [];
+              if (!$r['error'] && is_array($r['body'])) {
+                  foreach ($r['body'] as $p) {
+                      if (!is_array($p)) continue;
+                      $matches[] = [
+                          'id'=>(int)($p['id']??0),
+                          'name'=>(string)($p['name']??''),
+                          'sku'=>(string)($p['sku']??''),
+                          'status'=>(string)($p['status']??''),
+                          'type'=>(string)($p['type']??''),
+                      ];
+                  }
+              }
+              $out[]=['basalam'=>$item['basalam'],'query'=>$item['q'],'error'=>$r['error'],'matches'=>$matches];
+          }
+          echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          PHP
+          scp -P "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes /tmp/match-rejected.php "$DEPLOY_USER@$DEPLOY_HOST:/tmp/match-rejected.php"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "php /tmp/match-rejected.php '$DEPLOY_PATH'; rc=\$?; rm -f /tmp/match-rejected.php; exit \$rc"
