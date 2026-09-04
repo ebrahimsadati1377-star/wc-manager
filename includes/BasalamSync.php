@@ -362,11 +362,11 @@ class BasalamSync
         if ($weight > 0) {
             $weightInBasalamUnit = max(1, (int)round($weight * $weightMultiplier));
             $payload['weight'] = $weightInBasalamUnit;
-            $payload['package_weight'] = max($weightInBasalamUnit, $defaultPackageWeight);
-        } elseif ($defaultPackageWeight > 0) {
-            // Basalam requires product weight (or decimal_weight) in addition to package weight.
-            // If Woo has no weight, use the configured default as a conservative fallback.
-            $payload['weight'] = $defaultPackageWeight;
+            $payload['package_weight'] = max($weightInBasalamUnit + 1, $defaultPackageWeight);
+        } elseif ($defaultPackageWeight > 1) {
+            // Basalam requires product weight and package weight, with package weight strictly greater.
+            // Preserve the configured packaged weight and use the closest valid fallback for missing Woo weight.
+            $payload['weight'] = $defaultPackageWeight - 1;
             $payload['package_weight'] = $defaultPackageWeight;
         }
 
