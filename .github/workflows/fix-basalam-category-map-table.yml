@@ -1,0 +1,94 @@
+name: Fix Woo to Basalam apparel category mappings
+
+on:
+  push:
+    branches: [tmp/diag-basalam-1695]
+    paths:
+      - '.github/workflows/fix-basalam-category-map-table.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Correct category mapping table
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $db = Database::get();
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+
+          $targets = [
+              20 => [239, 'شلوار و سرهمی زنانه'],
+              22 => [241, 'کت و ست رسمی زنانه'],
+              23 => [239, 'شلوار و سرهمی زنانه'],
+          ];
+
+          // Validate Woo and Basalam category titles before mutating anything.
+          foreach ($targets as $wcId => [$basalamId, $expectedBasalamTitle]) {
+              $wcRes = $wc->getCategories(['include'=>(string)$wcId, 'per_page'=>100, 'hide_empty'=>'false']);
+              if ($wcRes['error'] || empty($wcRes['body'][0])) {
+                  throw new RuntimeException("Woo category #{$wcId} could not be validated: " . ($wcRes['error'] ?? 'not found'));
+              }
+              $wooTitle = (string)($wcRes['body'][0]['name'] ?? '');
+              $expectedWooTitle = [20=>'شلوار',22=>'سِت',23=>'اورال'][$wcId];
+              if ($wooTitle !== $expectedWooTitle) {
+                  throw new RuntimeException("Woo category #{$wcId} title mismatch: {$wooTitle}");
+              }
+              $bRes = $client->getCategory($basalamId);
+              if ($bRes['error']) throw new RuntimeException("Basalam category #{$basalamId} read failed: {$bRes['error']}");
+              $bTitle = (string)($bRes['body']['title'] ?? $bRes['body']['name'] ?? '');
+              if ($bTitle !== $expectedBasalamTitle) {
+                  throw new RuntimeException("Basalam category #{$basalamId} title mismatch: {$bTitle}");
+              }
+          }
+
+          $db->beginTransaction();
+          try {
+              $stmt = $db->prepare(
+                  'INSERT INTO basalam_category_map (wc_category_id, basalam_category_id, basalam_category_name) VALUES (:wc,:basalam,:name) '
+                  . 'ON DUPLICATE KEY UPDATE basalam_category_id=VALUES(basalam_category_id), basalam_category_name=VALUES(basalam_category_name)'
+              );
+              foreach ($targets as $wcId => [$basalamId, $name]) {
+                  $before = $db->prepare('SELECT * FROM basalam_category_map WHERE wc_category_id=:wc');
+                  $before->execute(['wc'=>$wcId]);
+                  echo 'BEFORE=' . json_encode($before->fetch() ?: [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+                  $stmt->execute(['wc'=>$wcId,'basalam'=>$basalamId,'name'=>$name]);
+              }
+              $db->commit();
+          } catch (Throwable $e) {
+              if ($db->inTransaction()) $db->rollBack();
+              throw $e;
+          }
+
+          foreach (array_keys($targets) as $wcId) {
+              $after = $db->prepare('SELECT * FROM basalam_category_map WHERE wc_category_id=:wc');
+              $after->execute(['wc'=>$wcId]);
+              echo 'AFTER=' . json_encode($after->fetch() ?: [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          }
+          PHP
