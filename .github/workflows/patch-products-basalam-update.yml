@@ -1,0 +1,82 @@
+name: Patch products Basalam update controls
+on:
+  push:
+    branches: [codex/products-basalam-update-button]
+    paths:
+      - '.github/workflows/patch-products-basalam-update.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/products-basalam-update-button
+      - name: Patch products.php
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('public/products.php')
+          text = p.read_text()
+
+          old = "$categories = [];\n"
+          new = "$categories = [];\n$basalamMaps = [];\n"
+          if old not in text:
+              raise SystemExit('categories anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """    if (!$catRes['error']) {\n        $categories = $catRes['body'];\n    }\n}\n\nfunction productListUrl"""
+          new = """    if (!$catRes['error']) {\n        $categories = $catRes['body'];\n    }\n}\n\nif ($products) {\n    try {\n        $basalamSync = new BasalamSync();\n        $basalamMaps = $basalamSync->getProductMaps(array_column($products, 'id'));\n    } catch (Throwable $e) {\n        $basalamMaps = [];\n    }\n}\n\nfunction productListUrl"""
+          if old not in text:
+              raise SystemExit('map anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = ".mobile-pagination { display: none; }\n"
+          new = """.mobile-pagination { display: none; }\n.product-basalam-sync { margin-top: .75rem; }\n.product-basalam-sync .btn { min-height: 44px; width: 100%; }\n.product-basalam-sync-time { margin-top: .35rem; color: #6c757d; font-size: .78rem; text-align: center; }\n.desktop-basalam-sync { margin-top: .5rem; }\n.desktop-basalam-sync-time { margin-top: .25rem; color: #6c757d; font-size: .72rem; }\n"""
+          if old not in text:
+              raise SystemExit('css anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = "<?php [$sLabel, $sColor] = productStatusMeta($p); ?>"
+          new = """<?php\n          [$sLabel, $sColor] = productStatusMeta($p);\n          $bMap = $basalamMaps[(int)$p['id']] ?? null;\n          $bMapped = !empty($bMap['basalam_product_id']);\n          $bLastSync = trim((string)($bMap['last_synced_at'] ?? ''));\n        ?>"""
+          if old not in text:
+              raise SystemExit('desktop map anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """            <button class=\"btn btn-sm btn-outline-danger\" onclick=\"deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')\">حذف</button>\n          </td>"""
+          new = """            <button class=\"btn btn-sm btn-outline-danger\" onclick=\"deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')\">حذف</button>\n            <div class=\"desktop-basalam-sync\">\n              <button type=\"button\" class=\"btn btn-sm btn-outline-success basalam-update-btn\" data-id=\"<?= (int)$p['id'] ?>\" <?= $bMapped ? '' : 'disabled' ?> title=\"<?= $bMapped ? 'ارسال بروزرسانی به باسلام' : 'این محصول هنوز به باسلام مپ نشده است' ?>\">\n                <i class=\"fas fa-sync-alt ms-1\"></i> بروزرسانی باسلام\n              </button>\n              <div class=\"desktop-basalam-sync-time\" data-basalam-last-sync-id=\"<?= (int)$p['id'] ?>\">\n                آخرین بروزرسانی: <?= e($bLastSync !== '' ? $bLastSync : 'انجام نشده') ?>\n              </div>\n            </div>\n          </td>"""
+          if old not in text:
+              raise SystemExit('desktop actions anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """      $typeLabel = $p['type'] === 'variable' ? 'متغیر' : 'ساده';\n    ?>"""
+          new = """      $typeLabel = $p['type'] === 'variable' ? 'متغیر' : 'ساده';\n      $bMap = $basalamMaps[(int)$p['id']] ?? null;\n      $bMapped = !empty($bMap['basalam_product_id']);\n      $bLastSync = trim((string)($bMap['last_synced_at'] ?? ''));\n    ?>"""
+          if old not in text:
+              raise SystemExit('mobile map anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """        <button class=\"btn btn-outline-danger\" onclick=\"deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')\"><i class=\"fas fa-trash\"></i> حذف</button>\n      </div>\n    </article>"""
+          new = """        <button class=\"btn btn-outline-danger\" onclick=\"deleteProduct(<?= (int)$p['id'] ?>, '<?= e(addslashes($p['name'])) ?>')\"><i class=\"fas fa-trash\"></i> حذف</button>\n      </div>\n\n      <div class=\"product-basalam-sync\">\n        <button type=\"button\" class=\"btn btn-outline-success basalam-update-btn\" data-id=\"<?= (int)$p['id'] ?>\" <?= $bMapped ? '' : 'disabled' ?> title=\"<?= $bMapped ? 'ارسال بروزرسانی به باسلام' : 'این محصول هنوز به باسلام مپ نشده است' ?>\">\n          <i class=\"fas fa-sync-alt\"></i> بروزرسانی باسلام\n        </button>\n        <div class=\"product-basalam-sync-time\" data-basalam-last-sync-id=\"<?= (int)$p['id'] ?>\">\n          آخرین بروزرسانی: <?= e($bLastSync !== '' ? $bLastSync : 'انجام نشده') ?>\n        </div>\n      </div>\n    </article>"""
+          if old not in text:
+              raise SystemExit('mobile actions anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = """function deleteProduct(id, name) {\n  if (!confirm('آیا از حذف محصول «' + name + '» مطمئن هستید؟ این عملیات غیرقابل بازگشت است.')) return;"""
+          new = """document.querySelectorAll('.basalam-update-btn').forEach(button => {\n  button.addEventListener('click', async function () {\n    const id = this.dataset.id;\n    if (!id) return;\n\n    const buttons = document.querySelectorAll('.basalam-update-btn[data-id=\"' + id + '\"]');\n    buttons.forEach(btn => btn.disabled = true);\n    const originalHtml = this.innerHTML;\n    this.innerHTML = '<span class=\"spinner-border spinner-border-sm\" aria-hidden=\"true\"></span> در حال بروزرسانی...';\n\n    const fd = new FormData();\n    fd.append('id', id);\n    fd.append('force', '1');\n    if (window.CSRF_TOKEN) fd.append('csrf_token', window.CSRF_TOKEN);\n\n    try {\n      const response = await fetch('ajax/basalam_sync_product.php', { method: 'POST', body: fd });\n      const data = await response.json();\n      if (!response.ok || !data.success) throw new Error(data.message || 'بروزرسانی باسلام ناموفق بود.');\n\n      document.querySelectorAll('[data-basalam-last-sync-id=\"' + id + '\"]').forEach(el => {\n        el.textContent = 'آخرین بروزرسانی: همین الان';\n      });\n\n      const warningText = Array.isArray(data.warnings) && data.warnings.length\n        ? '\\n\\nهشدار: ' + data.warnings.join(' | ')\n        : '';\n      alert((data.message || 'بروزرسانی باسلام انجام شد.') + warningText);\n    } catch (error) {\n      alert(error.message || 'بروزرسانی باسلام ناموفق بود.');\n    } finally {\n      this.innerHTML = originalHtml;\n      buttons.forEach(btn => btn.disabled = false);\n    }\n  });\n});\n\nfunction deleteProduct(id, name) {\n  if (!confirm('آیا از حذف محصول «' + name + '» مطمئن هستید؟ این عملیات غیرقابل بازگشت است.')) return;"""
+          if old not in text:
+              raise SystemExit('script anchor not found')
+          text = text.replace(old, new, 1)
+
+          p.write_text(text)
+          PY
+          php -l public/products.php
+      - name: Commit patch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/products.php
+          git commit -m "Add Basalam update button to product cards"
+          git push origin HEAD:codex/products-basalam-update-button
