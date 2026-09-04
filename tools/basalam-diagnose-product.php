@@ -21,6 +21,13 @@ $out = [
     'woo_configured' => $wc->isConfigured(),
     'basalam_configured' => $basalam->isConfigured(),
     'basalam_vendor_id' => $basalam->getVendorId(),
+    'safe_sync_settings' => [
+        'default_package_weight' => (int)getSetting('basalam_default_package_weight', '0'),
+        'weight_multiplier' => (float)getSetting('basalam_weight_multiplier', '1000'),
+        'price_multiplier' => (float)getSetting('basalam_price_multiplier', '1'),
+        'preparation_days' => (int)getSetting('basalam_preparation_days', '1'),
+        'sync_images' => (string)getSetting('basalam_sync_images', '1'),
+    ],
 ];
 
 $productMap = $sync->getProductMap($productId);
