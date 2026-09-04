@@ -1,0 +1,74 @@
+name: Inspect Basalam rejection reasons
+on:
+  push:
+    branches: [codex/basalam-catalog-mobile-reasons]
+    paths:
+      - '.github/workflows/inspect-basalam-rejection-reasons.yml'
+permissions:
+  contents: read
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect rejected products
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          cat > /tmp/inspect.php <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $c = new BasalamClient();
+          function interesting(array $node, string $path=''): array {
+              $out=[];
+              foreach ($node as $k=>$v) {
+                  $p=$path===''?(string)$k:$path.'.'.$k;
+                  $lk=strtolower((string)$k);
+                  $match=false;
+                  foreach (['reason','message','reject','revision','review','violation','description','status','error','note','comment','publish','showable','available'] as $needle) {
+                      if (str_contains($lk,$needle)) { $match=true; break; }
+                  }
+                  if ($match && !is_array($v)) $out[$p]=$v;
+                  if (is_array($v) && count($v) <= 50) $out += interesting($v,$p);
+              }
+              return $out;
+          }
+          foreach ([57706644,57706466] as $id) {
+              $r=$c->getProduct($id,true);
+              $b=(array)($r['body']??[]);
+              echo 'PRODUCT=' . json_encode([
+                  'id'=>$id,
+                  'error'=>$r['error']??null,
+                  'keys'=>array_keys($b),
+                  'name'=>$b['name']??$b['title']??null,
+                  'status'=>$b['status']??null,
+                  'is_showable'=>$b['is_showable']??null,
+                  'is_available'=>$b['is_available']??null,
+                  'is_product_for_revision'=>$b['is_product_for_revision']??null,
+                  'revision'=>$b['revision']??null,
+                  'rejection_reason'=>$b['rejection_reason']??null,
+                  'reject_reason'=>$b['reject_reason']??null,
+                  'message'=>$b['message']??null,
+                  'description'=>$b['description']??null,
+                  'interesting'=>interesting($b),
+              ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          }
+          PHP
+          base64 -w0 /tmp/inspect.php | ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && base64 -d | php"
