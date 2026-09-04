@@ -1,0 +1,22 @@
+name: TEMP UI lint
+on:
+  push:
+    branches:
+      - codex/professional-ui-pass
+    paths:
+      - .github/workflows/tmp-ui-lint.yml
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/professional-ui-pass
+      - name: PHP lint
+        run: |
+          php -l public/categories.php
+          php -l public/users.php
+          php -l public/settings.php
+          php -l public/chatgpt.php
+          php -l public/add-post.php
+          php -l public/edit-post.php
