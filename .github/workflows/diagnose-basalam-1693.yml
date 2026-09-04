@@ -1,0 +1,98 @@
+name: Diagnose Basalam Woo 1693
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-basalam-1693.yml'
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+  DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect Woo product and existing Basalam titles
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
+          <?php
+          require_once 'includes/bootstrap.php';
+          $wc = new WooCommerceClient();
+          $client = new BasalamClient();
+          $sync = new BasalamSync($wc, $client);
+          $pRes = $wc->getProduct(1693);
+          if ($pRes['error']) { echo 'WC_ERROR=' . $pRes['error'] . PHP_EOL; exit(1); }
+          $p = $pRes['body'];
+          echo 'WOO=' . json_encode([
+              'id'=>1693,
+              'name'=>$p['name'] ?? null,
+              'type'=>$p['type'] ?? null,
+              'price'=>$p['price'] ?? null,
+              'regular_price'=>$p['regular_price'] ?? null,
+              'sale_price'=>$p['sale_price'] ?? null,
+              'stock_quantity'=>$p['stock_quantity'] ?? null,
+              'sku'=>$p['sku'] ?? null,
+              'weight'=>$p['weight'] ?? null,
+              'categories'=>$p['categories'] ?? [],
+              'attributes'=>$p['attributes'] ?? [],
+              'image_count'=>is_array($p['images'] ?? null) ? count($p['images']) : 0,
+          ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          $rm = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
+          $rm->setAccessible(true);
+          $cat = $rm->invoke($sync, $p);
+          echo 'CATEGORY=' . json_encode($cat, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+          $norm = static function(string $s): string {
+              $s = str_replace(["\u{200c}", "\u{200f}", "\u{200e}", 'ي', 'ك', 'ة', 'ۀ'], ['', '', '', 'ی', 'ک', 'ه', 'ه'], $s);
+              $s = str_replace(['آسمانی','آسموني','آسمونی'], 'آسمونی', $s);
+              $s = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $s) ?? $s;
+              $s = preg_replace('/\s+/u', ' ', trim($s)) ?? trim($s);
+              return mb_strtolower($s, 'UTF-8');
+          };
+          $target = $norm((string)($p['name'] ?? ''));
+          $matches = [];
+          for ($page=1; $page<=10; $page++) {
+              $res = $client->getVendorProducts(['page'=>$page,'per_page'=>100]);
+              if ($res['error']) { echo 'LIST_ERROR=' . $res['error'] . PHP_EOL; break; }
+              $body = $res['body'] ?? [];
+              $items = $body['data'] ?? $body['products'] ?? $body;
+              if (!is_array($items) || !$items) break;
+              $count = 0;
+              foreach ($items as $item) {
+                  if (!is_array($item)) continue;
+                  $count++;
+                  $name = (string)($item['name'] ?? $item['title'] ?? '');
+                  $n = $norm($name);
+                  if ($n === $target || str_contains($n, 'california') || str_contains($n, 'کالیفرنیا') || str_contains($n, 'کراپ تیشرت')) {
+                      $matches[] = ['id'=>(int)($item['id']??0),'name'=>$name,'status'=>$item['status']??null,'stock'=>$item['stock']??null];
+                  }
+              }
+              if ($count < 100) break;
+          }
+          echo 'TARGET_NORM=' . $target . PHP_EOL;
+          echo 'MATCHES=' . json_encode($matches, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+          PHP
