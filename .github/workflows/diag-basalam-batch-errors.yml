@@ -1,4 +1,4 @@
-name: Diagnose remaining Basalam catalog sync errors
+name: Verify Basalam catalog error fixes
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
 
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,51 +31,53 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Inspect affected Woo and Basalam products
+      - name: Sync affected products and verify
         run: |
           set -euo pipefail
           PORT="${DEPLOY_PORT:-22}"
           ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && php" <<'PHP'
           <?php
           require_once 'includes/bootstrap.php';
-          $wc = new WooCommerceClient();
+          $sync = new BasalamSync();
           $client = new BasalamClient();
-          $sync = new BasalamSync($wc, $client);
-          $cases = [
-            [1083,57614480],[1075,57614464],[1061,0],[1056,57614424],
-            [1043,57614401],[1039,57614396],[1036,57614393]
-          ];
           $mapRef = new ReflectionMethod(BasalamSync::class, 'getVariationMapsByProduct');
           $mapRef->setAccessible(true);
-          $catRef = new ReflectionMethod(BasalamSync::class, 'resolveBasalamCategory');
-          $catRef->setAccessible(true);
-          foreach ($cases as [$wooId,$expectedBasalamId]) {
-              $p = $wc->getProduct($wooId);
-              $product = (array)($p['body'] ?? []);
+          $ids = [1083,1075,1061,1056,1043,1039,1036];
+          $failed = false;
+          foreach ($ids as $wooId) {
+              $result = $sync->syncProduct($wooId, false);
               $map = $sync->getProductMap($wooId);
-              $basalamId = (int)($map['basalam_product_id'] ?? $expectedBasalamId);
-              $vr = $wc->getVariations($wooId, ['per_page'=>100]);
-              $wooVars = [];
-              foreach ((array)($vr['body'] ?? []) as $v) {
-                  $wooVars[] = [
-                    'id'=>$v['id']??null,'sku'=>$v['sku']??null,'price'=>$v['price']??null,
-                    'stock'=>$v['stock_quantity']??null,'attributes'=>$v['attributes']??[]
-                  ];
-              }
-              $b = $basalamId > 0 ? $client->getProduct($basalamId, true) : ['body'=>[],'error'=>null];
-              $bb = (array)($b['body'] ?? []);
-              $bvars=[];
-              foreach ((array)($bb['variants'] ?? []) as $v) {
-                  $bvars[]=['id'=>$v['id']??null,'sku'=>$v['sku']??null,'properties'=>$v['properties']??[]];
-              }
-              $cat = $catRef->invoke($sync, $product);
+              $varMaps = $mapRef->invoke($sync, $wooId);
               echo "CASE={$wooId}\n";
-              echo 'WOO=' . json_encode(['id'=>$wooId,'name'=>$product['name']??null,'sku'=>$product['sku']??null,'type'=>$product['type']??null,'attributes'=>$product['attributes']??[],'categories'=>$product['categories']??[]], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              echo 'WOO_VARIANTS=' . json_encode($wooVars, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              echo 'SYNC=' . json_encode($result, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
               echo 'PRODUCT_MAP=' . json_encode($map, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              echo 'VAR_MAPS=' . json_encode($mapRef->invoke($sync,$wooId), JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              echo 'WOO_CATEGORY_MAP=' . json_encode($cat, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              echo 'BASALAM=' . json_encode(['id'=>$bb['id']??$basalamId,'name'=>$bb['name']??null,'sku'=>$bb['sku']??null,'category'=>$bb['category']??($bb['category_id']??null),'product_attribute'=>$bb['product_attribute']??($bb['attributes']??null),'variants'=>$bvars], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
-              echo 'BASALAM_ERROR=' . ($b['error'] ?? '') . PHP_EOL;
+              echo 'VAR_MAPS=' . json_encode($varMaps, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+
+              if (empty($result['success'])) {
+                  $failed = true;
+                  continue;
+              }
+              $warnings = (array)($result['warnings'] ?? []);
+              foreach ($warnings as $warning) {
+                  if (str_contains((string)$warning, 'sku:') || str_contains((string)$warning, 'product_attribute:')) {
+                      $failed = true;
+                  }
+              }
+              if ($wooId !== 1056 && $warnings) {
+                  $failed = true;
+              }
+
+              $basalamId = (int)($map['basalam_product_id'] ?? 0);
+              if ($basalamId > 0) {
+                  $b = $client->getProduct($basalamId, true);
+                  $bb = (array)($b['body'] ?? []);
+                  echo 'BASALAM=' . json_encode([
+                    'id'=>$basalamId,
+                    'sku'=>$bb['sku']??null,
+                    'category'=>$bb['category']??($bb['category_id']??null),
+                    'variants'=>$bb['variants']??[]
+                  ], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) . PHP_EOL;
+              }
           }
+          if ($failed) exit(1);
           PHP
