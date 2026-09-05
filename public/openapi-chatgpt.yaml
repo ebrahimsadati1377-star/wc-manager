@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: BajiStyle WooCommerce Manager API
-  version: 1.1.0
-  description: Secure WooCommerce and Basalam product-management API exposed by WC Manager for ChatGPT.
+  version: 1.2.0
+  description: Secure WooCommerce product-management API exposed by WC Manager for ChatGPT.
 servers:
   - url: https://manage.bajistyle.ir/api
 components:
@@ -26,82 +26,11 @@ components:
         manage_stock: { type: boolean }
         stock_quantity: { type: integer }
         stock_status: { type: string, enum: [instock, outofstock, onbackorder] }
-        categories:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: integer }
-        tags:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: integer }
-        images:
-          type: array
-          items:
-            type: object
-            properties:
-              id: { type: integer }
-              src: { type: string, format: uri }
-              name: { type: string }
-              alt: { type: string }
-        attributes:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        default_attributes:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-    VariationInput:
-      type: object
-      additionalProperties: true
-      properties:
-        sku: { type: string }
-        regular_price: { type: string }
-        sale_price: { type: string }
-        manage_stock: { type: boolean }
-        stock_quantity: { type: integer }
-        stock_status: { type: string, enum: [instock, outofstock, onbackorder] }
-        attributes:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        image:
-          type: object
-          additionalProperties: true
-    BasalamSyncInput:
-      type: object
-      required: [wc_product_id]
-      properties:
-        wc_product_id:
-          type: integer
-          minimum: 1
-          description: WooCommerce product ID to create/update on Basalam.
-        force:
-          type: boolean
-          default: false
-          description: Force sync even when the WooCommerce product hash is unchanged.
-    BasalamBatchSyncInput:
-      type: object
-      required: [wc_product_ids]
-      properties:
-        wc_product_ids:
-          type: array
-          minItems: 1
-          maxItems: 20
-          uniqueItems: true
-          items:
-            type: integer
-            minimum: 1
-        force:
-          type: boolean
-          default: false
+        categories: { type: array, items: { type: object, additionalProperties: true } }
+        tags: { type: array, items: { type: object, additionalProperties: true } }
+        images: { type: array, items: { type: object, additionalProperties: true } }
+        attributes: { type: array, items: { type: object, additionalProperties: true } }
+        meta_data: { type: array, items: { type: object, additionalProperties: true } }
 security:
   - bearerAuth: []
 paths:
@@ -109,27 +38,31 @@ paths:
     get:
       operationId: checkConnection
       summary: Check WC Manager and WooCommerce connectivity.
+      responses: { '200': { description: Connected } }
+  /media.php:
+    post:
+      operationId: uploadImage
+      summary: Upload a JPEG, PNG or WebP image and return a public URL for WooCommerce.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, content_type, base64]
+              properties:
+                filename: { type: string }
+                content_type: { type: string, enum: [image/jpeg, image/png, image/webp] }
+                base64: { type: string, description: Base64-encoded image bytes, optionally as a data URL. Maximum decoded size 10 MB. }
       responses:
-        '200':
-          description: Connected.
+        '201': { description: Image uploaded and public URL returned. }
+        '413': { description: Image exceeds 10 MB. }
+        '422': { description: Invalid image input. }
   /products.php:
     get:
       operationId: listProducts
-      summary: List or search WooCommerce products.
-      parameters:
-        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
-        - { name: search, in: query, schema: { type: string } }
-        - { name: status, in: query, schema: { type: string } }
-        - { name: type, in: query, schema: { type: string } }
-        - { name: sku, in: query, schema: { type: string } }
-        - { name: category, in: query, schema: { type: string } }
-        - { name: stock_status, in: query, schema: { type: string } }
-        - { name: orderby, in: query, schema: { type: string } }
-        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
-      responses:
-        '200':
-          description: Product list.
+      summary: List/search WooCommerce products.
+      responses: { '200': { description: Product list } }
     post:
       operationId: createProduct
       summary: Create a WooCommerce product.
@@ -137,190 +70,28 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/ProductInput'
-      responses:
-        '201':
-          description: Product created.
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses: { '201': { description: Product created } }
   /product.php:
     get:
       operationId: getProduct
-      summary: Get one WooCommerce product.
+      summary: Get a WooCommerce product.
       parameters:
         - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-      responses:
-        '200':
-          description: Product.
+      responses: { '200': { description: Product } }
     put:
       operationId: updateProduct
-      summary: Update a WooCommerce product. Never delete products through this API.
+      summary: Update a WooCommerce product.
       parameters:
         - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/ProductInput'
-      responses:
-        '200':
-          description: Product updated.
-  /variations.php:
-    get:
-      operationId: listVariations
-      summary: List variations for a variable WooCommerce product.
-      parameters:
-        - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
-      responses:
-        '200':
-          description: Variations.
-    post:
-      operationId: createVariation
-      summary: Create a WooCommerce variation.
-      parameters:
-        - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VariationInput'
-      responses:
-        '201':
-          description: Variation created.
-    put:
-      operationId: updateVariation
-      summary: Update a WooCommerce variation.
-      parameters:
-        - { name: product_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-        - { name: variation_id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VariationInput'
-      responses:
-        '200':
-          description: Variation updated.
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses: { '200': { description: Product updated } }
   /categories.php:
     get:
       operationId: listCategories
       summary: List WooCommerce product categories.
-      parameters:
-        - { name: search, in: query, schema: { type: string } }
-        - { name: parent, in: query, schema: { type: integer } }
-      responses:
-        '200':
-          description: Categories.
-    post:
-      operationId: createCategory
-      summary: Create a WooCommerce product category.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name: { type: string }
-                slug: { type: string }
-                parent: { type: integer }
-                description: { type: string }
-      responses:
-        '201':
-          description: Category created.
-    put:
-      operationId: updateCategory
-      summary: Update a WooCommerce product category.
-      parameters:
-        - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-      responses:
-        '200':
-          description: Category updated.
-  /attributes.php:
-    get:
-      operationId: listAttributesOrTerms
-      summary: List WooCommerce global attributes, or terms when attribute_id is provided.
-      parameters:
-        - { name: attribute_id, in: query, schema: { type: integer, minimum: 1 } }
-      responses:
-        '200':
-          description: Attributes or terms.
-  /basalam-products.php:
-    get:
-      operationId: listBasalamProducts
-      summary: List or filter products in the configured Basalam vendor.
-      parameters:
-        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
-        - { name: title, in: query, description: Filter by product title, schema: { type: string } }
-        - { name: category, in: query, description: Comma-separated Basalam category IDs, schema: { type: string } }
-        - { name: statuses, in: query, description: Comma-separated Basalam product status IDs, schema: { type: string } }
-        - { name: ids, in: query, description: Comma-separated Basalam product IDs, schema: { type: string } }
-        - { name: skus, in: query, description: Comma-separated SKUs, schema: { type: string } }
-        - { name: stock_gte, in: query, schema: { type: integer } }
-        - { name: stock_lte, in: query, schema: { type: integer } }
-        - { name: price_gte, in: query, schema: { type: integer } }
-        - { name: price_lte, in: query, schema: { type: integer } }
-        - { name: preparation_day_gte, in: query, schema: { type: integer } }
-        - { name: preparation_day_lte, in: query, schema: { type: integer } }
-        - { name: variants_flatting, in: query, schema: { type: boolean } }
-        - { name: is_wholesale, in: query, schema: { type: boolean } }
-        - { name: sort, in: query, schema: { type: string } }
-      responses:
-        '200':
-          description: Basalam product list.
-  /basalam-product.php:
-    get:
-      operationId: getBasalamProduct
-      summary: Get a Basalam product with variants and details.
-      parameters:
-        - { name: id, in: query, required: true, schema: { type: integer, minimum: 1 } }
-      responses:
-        '200':
-          description: Basalam product.
-  /basalam-sync.php:
-    post:
-      operationId: syncWooProductToBasalam
-      summary: Create or update one Basalam product from its WooCommerce source product.
-      description: WooCommerce remains the source of truth. Category mapping must already exist in WC Manager.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BasalamSyncInput'
-      responses:
-        '200':
-          description: Product synchronized to Basalam.
-        '422':
-          description: Sync could not be completed, for example because category mapping is missing.
-  /basalam-sync-batch.php:
-    post:
-      operationId: syncWooProductsToBasalamBatch
-      summary: Synchronize up to 20 WooCommerce products to Basalam in one request.
-      description: Use this for bounded catalog batches. WooCommerce remains the source of truth and category mappings must already exist.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BasalamBatchSyncInput'
-      responses:
-        '200':
-          description: All requested products were synchronized or skipped as unchanged.
-        '207':
-          description: Batch completed with one or more product-level failures.
-        '422':
-          description: Invalid or oversized batch.
+      responses: { '200': { description: Categories } }
