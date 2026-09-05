@@ -16,7 +16,7 @@ if ($method === 'GET') {
         'on_sale', 'min_price', 'max_price', 'stock_status',
     ];
     $params = apiFilterArray($_GET, $allowed);
-    $params['per_page'] = min(100, max(1, (int)($params['per_page'] ?? 20)));
+    $params['per_page'] = min(20, max(1, (int)($params['per_page'] ?? 20)));
     $params['page'] = max(1, (int)($params['page'] ?? 1));
 
     apiWooResponse($wc->getProducts($params));
