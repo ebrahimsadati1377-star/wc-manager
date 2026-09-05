@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: BajiStyle WooCommerce Manager API
-  version: 1.2.0
+  version: 1.3.0
   description: Secure WooCommerce product-management API exposed by WC Manager for ChatGPT.
 servers:
   - url: https://manage.bajistyle.ir/api
@@ -42,22 +42,27 @@ paths:
   /media.php:
     post:
       operationId: uploadImage
-      summary: Upload a JPEG, PNG or WebP image and return a public URL for WooCommerce.
+      summary: Import a JPEG, PNG or WebP image from a public URL, or upload it as Base64, and return a public BAJI URL.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [filename, content_type, base64]
+              required: [filename]
               properties:
                 filename: { type: string }
-                content_type: { type: string, enum: [image/jpeg, image/png, image/webp] }
-                base64: { type: string, description: Base64-encoded image bytes, optionally as a data URL. Maximum decoded size 10 MB. }
+                url: { type: string, format: uri, description: Public http/https URL of the image. Preferred for ChatGPT-generated files. }
+                image_url: { type: string, format: uri, description: Alias for url. }
+                base64: { type: string, description: Optional Base64 image bytes or data URL. Use only when no public URL is available. }
+              anyOf:
+                - required: [url]
+                - required: [image_url]
+                - required: [base64]
       responses:
-        '201': { description: Image uploaded and public URL returned. }
+        '201': { description: Image imported and public BAJI URL returned. }
         '413': { description: Image exceeds 10 MB. }
-        '422': { description: Invalid image input. }
+        '422': { description: Invalid image input or URL. }
   /products.php:
     get:
       operationId: listProducts
