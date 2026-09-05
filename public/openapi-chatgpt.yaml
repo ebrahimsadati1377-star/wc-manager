@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: BajiStyle WooCommerce Manager API
-  version: 1.3.0
+  version: 1.4.0
   description: Secure WooCommerce product-management API exposed by WC Manager for ChatGPT.
 servers:
   - url: https://manage.bajistyle.ir/api
@@ -42,27 +42,43 @@ paths:
   /media.php:
     post:
       operationId: uploadImage
-      summary: Import a JPEG, PNG or WebP image from a public URL, or upload it as Base64, and return a public BAJI URL.
+      summary: Upload an image from the current ChatGPT conversation, a public URL, or Base64, and return a public BAJI URL.
+      description: When the image is attached or generated in the ChatGPT conversation, pass it through openaiFileIdRefs. ChatGPT populates that field with a short-lived download link; WC Manager downloads and stores the image permanently.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [filename]
               properties:
-                filename: { type: string }
-                url: { type: string, format: uri, description: Public http/https URL of the image. Preferred for ChatGPT-generated files. }
+                filename:
+                  type: string
+                  description: Optional preferred filename. If omitted for a ChatGPT file, the attachment name is used.
+                openaiFileIdRefs:
+                  type: array
+                  minItems: 1
+                  maxItems: 1
+                  description: Exactly one image from the current ChatGPT conversation, including a generated image. This special GPT Actions field is populated automatically by ChatGPT when a conversation file is selected for the action.
+                  items:
+                    type: object
+                    required: [download_link]
+                    properties:
+                      name: { type: string }
+                      id: { type: string }
+                      mime_type: { type: string }
+                      download_link: { type: string, format: uri }
+                url: { type: string, format: uri, description: Public http/https URL of the image. }
                 image_url: { type: string, format: uri, description: Alias for url. }
-                base64: { type: string, description: Optional Base64 image bytes or data URL. Use only when no public URL is available. }
+                base64: { type: string, description: Optional Base64 image bytes or data URL. Use only when no conversation file or public URL is available. }
               anyOf:
+                - required: [openaiFileIdRefs]
                 - required: [url]
                 - required: [image_url]
                 - required: [base64]
       responses:
         '201': { description: Image imported and public BAJI URL returned. }
         '413': { description: Image exceeds 10 MB. }
-        '422': { description: Invalid image input or URL. }
+        '422': { description: Invalid image input, ChatGPT file reference, or URL. }
   /products.php:
     get:
       operationId: listProducts
