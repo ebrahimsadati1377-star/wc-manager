@@ -43,6 +43,8 @@ Server base URL in the schema:
 ## Supported actions
 
 - Check connection
+- Upload an image directly from the current ChatGPT conversation
+- Upload/import an image from a public URL or Base64
 - List/search products
 - Get a product
 - Create a product
@@ -50,6 +52,43 @@ Server base URL in the schema:
 - List/create/update variations
 - List/create/update product categories
 - List global attributes and their terms
+
+## ChatGPT conversation image upload
+
+GPT Actions can include conversation files in POST requests through the special `openaiFileIdRefs` field. This also covers images generated inside ChatGPT when the generated image is available as a conversation file.
+
+`POST /api/media.php` accepts exactly one file reference and permanently copies the image into WC Manager before the short-lived ChatGPT download URL expires. The endpoint also keeps the existing `url`, `image_url`, and `base64` fallbacks for compatibility.
+
+Example payload shape received from ChatGPT:
+
+```json
+{
+  "openaiFileIdRefs": [
+    {
+      "name": "generated-image.png",
+      "id": "file_...",
+      "mime_type": "image/png",
+      "download_link": "https://..."
+    }
+  ]
+}
+```
+
+Successful response:
+
+```json
+{
+  "success": true,
+  "url": "https://manage.bajistyle.ir/uploads/chatgpt/generated-image-....png",
+  "filename": "generated-image-....png",
+  "content_type": "image/png",
+  "size": 123456,
+  "width": 1024,
+  "height": 1024
+}
+```
+
+The returned `url` can then be passed directly in WooCommerce's standard product `images` payload.
 
 ## Example product creation
 
