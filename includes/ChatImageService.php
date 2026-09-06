@@ -16,6 +16,7 @@ class ChatImageException extends RuntimeException
 class ChatImageService
 {
     private const MAX_BYTES = 10485760; // 10 MiB
+    private const MAX_REDIRECTS = 3;
 
     private string $uploadDir;
 
@@ -72,11 +73,7 @@ class ChatImageService
             );
         }
 
-        if ($base64 !== '') {
-            $binary = $this->decodeBase64($base64);
-        } else {
-            $binary = $this->downloadPublicImage($sourceUrl);
-        }
+        $binary = $base64 !== '' ? $this->decodeBase64($base64) : $this->downloadPublicImage($sourceUrl);
 
         if (strlen($binary) > self::MAX_BYTES) {
             throw new ChatImageException('file_too_large', 'Maximum image size is 10 MB.', 413);
@@ -94,10 +91,7 @@ class ChatImageService
             'image/webp' => 'webp',
         ];
         if (!isset($allowedTypes[$mime])) {
-            throw new ChatImageException(
-                'unsupported_image_type',
-                'Only JPEG, PNG and WebP images are supported.'
-            );
+            throw new ChatImageException('unsupported_image_type', 'Only JPEG, PNG and WebP images are supported.');
         }
 
         $safeBase = preg_replace('/[^A-Za-z0-9._-]+/', '-', pathinfo($filename, PATHINFO_FILENAME));
@@ -112,11 +106,7 @@ class ChatImageService
             . '.' . $allowedTypes[$mime];
 
         if (!is_dir($this->uploadDir) && !mkdir($this->uploadDir, 0755, true) && !is_dir($this->uploadDir)) {
-            throw new ChatImageException(
-                'upload_directory_error',
-                'Could not create upload directory.',
-                500
-            );
+            throw new ChatImageException('upload_directory_error', 'Could not create upload directory.', 500);
         }
 
         $path = rtrim($this->uploadDir, '/') . '/' . $safeName;
@@ -142,90 +132,204 @@ class ChatImageService
         if (preg_match('/^data:[^;]+;base64,(.*)$/s', $base64, $match)) {
             $base64 = $match[1];
         }
-
         if (strlen($base64) > (int)ceil(self::MAX_BYTES * 4 / 3) + 4096) {
             throw new ChatImageException('file_too_large', 'Maximum image size is 10 MB.', 413);
         }
-
         $binary = base64_decode($base64, true);
         if ($binary === false || $binary === '') {
             throw new ChatImageException('invalid_base64', 'Invalid image data.');
         }
-
         return $binary;
     }
 
+    /**
+     * Downloads only from validated public hosts. Each redirect is re-validated
+     * and DNS is pinned to a checked public IP to prevent SSRF/DNS rebinding.
+     */
     private function downloadPublicImage(string $sourceUrl): string
     {
-        $parts = parse_url($sourceUrl);
-        if (
-            !$parts
-            || !in_array(strtolower((string)($parts['scheme'] ?? '')), ['http', 'https'], true)
-            || empty($parts['host'])
-        ) {
-            throw new ChatImageException('invalid_url', 'A public http/https image URL is required.');
+        $url = $sourceUrl;
+        for ($hop = 0; $hop <= self::MAX_REDIRECTS; $hop++) {
+            $target = $this->validateRemoteUrl($url);
+            $body = '';
+            $location = '';
+            $downloaded = 0;
+            $tooLarge = false;
+
+            $ch = curl_init();
+            if ($ch === false) {
+                throw new ChatImageException('download_failed', 'Could not initialize image download.', 500);
+            }
+
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => false,
+                CURLOPT_HEADER => false,
+                CURLOPT_FOLLOWLOCATION => false,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_HTTPHEADER => ['Accept: image/*,*/*;q=0.5'],
+                CURLOPT_USERAGENT => 'BAJI-WC-Manager/1.3 MCP',
+                CURLOPT_RESOLVE => [$target['resolve']],
+                CURLOPT_HEADERFUNCTION => function ($curl, string $line) use (&$location): int {
+                    if (stripos($line, 'Location:') === 0) {
+                        $location = trim(substr($line, strlen('Location:')));
+                    }
+                    return strlen($line);
+                },
+                CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use (&$body, &$downloaded, &$tooLarge): int {
+                    $length = strlen($chunk);
+                    $downloaded += $length;
+                    if ($downloaded > self::MAX_BYTES) {
+                        $tooLarge = true;
+                        return 0;
+                    }
+                    $body .= $chunk;
+                    return $length;
+                },
+            ]);
+            if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTP') && defined('CURLPROTO_HTTPS')) {
+                curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+            }
+
+            $ok = curl_exec($ch);
+            $error = curl_error($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($tooLarge) {
+                throw new ChatImageException('file_too_large', 'Maximum image size is 10 MB.', 413);
+            }
+            if ($ok === false) {
+                throw new ChatImageException('download_failed', 'Could not download image: ' . ($error ?: 'network error'));
+            }
+            if ($status >= 200 && $status < 300) {
+                if ($body === '') {
+                    throw new ChatImageException('download_failed', 'The image response was empty.');
+                }
+                return $body;
+            }
+            if ($status >= 300 && $status < 400 && $location !== '') {
+                if ($hop >= self::MAX_REDIRECTS) {
+                    throw new ChatImageException('download_failed', 'Image URL exceeded the redirect limit.');
+                }
+                $url = $this->resolveRedirectUrl($url, $location);
+                continue;
+            }
+            throw new ChatImageException('download_failed', 'Could not download image URL (HTTP ' . $status . ').');
         }
 
-        $host = strtolower((string)$parts['host']);
-        if (
-            $host === 'localhost'
-            || $host === '127.0.0.1'
-            || $host === '::1'
-            || preg_match('/(^|\\.)local$/', $host)
-        ) {
+        throw new ChatImageException('download_failed', 'Could not download image URL.');
+    }
+
+    private function validateRemoteUrl(string $url): array
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)
+            || !isset($parts['scheme'], $parts['host'])
+            || !in_array(strtolower((string)$parts['scheme']), ['http', 'https'], true)) {
+            throw new ChatImageException('invalid_url', 'A public http/https image URL is required.');
+        }
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            throw new ChatImageException('invalid_url', 'Image URLs may not contain login information.');
+        }
+
+        $scheme = strtolower((string)$parts['scheme']);
+        $host = strtolower(rtrim((string)$parts['host'], '.'));
+        $port = isset($parts['port']) ? (int)$parts['port'] : ($scheme === 'https' ? 443 : 80);
+        if ($host === '' || !in_array($port, [80, 443], true)) {
+            throw new ChatImageException('invalid_url', 'Image host or port is not allowed.');
+        }
+        if ($host === 'localhost' || preg_match('/(^|\.)local$/', $host)) {
             throw new ChatImageException('invalid_url', 'Local URLs are not allowed.');
         }
 
-        if (filter_var($host, FILTER_VALIDATE_IP) && !$this->isPublicIp($host)) {
-            throw new ChatImageException('invalid_url', 'Private or reserved network URLs are not allowed.');
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            if (!$this->isPublicIp($host)) {
+                throw new ChatImageException('invalid_url', 'Private or reserved network URLs are not allowed.');
+            }
+            $ip = $host;
+        } else {
+            if (!preg_match('/^[a-z0-9.-]+$/', $host)) {
+                throw new ChatImageException('invalid_url', 'Image hostname is invalid.');
+            }
+            $ips = gethostbynamel($host);
+            if (!$ips) {
+                throw new ChatImageException('invalid_url', 'Image hostname could not be resolved.');
+            }
+            foreach ($ips as $resolved) {
+                if (!$this->isPublicIp($resolved)) {
+                    throw new ChatImageException('invalid_url', 'Image hostname resolves to a private or reserved network.');
+                }
+            }
+            $ip = $ips[0];
         }
 
-        $context = stream_context_create([
-            'http' => [
-                'timeout' => 15,
-                'follow_location' => 1,
-                'max_redirects' => 3,
-                'user_agent' => 'BAJI-WC-Manager/1.2 MCP',
-                'ignore_errors' => false,
-            ],
-            'https' => [
-                'timeout' => 15,
-            ],
-        ]);
+        return [
+            'host' => $host,
+            'port' => $port,
+            'ip' => $ip,
+            'resolve' => $host . ':' . $port . ':' . $ip,
+        ];
+    }
 
-        $binary = @file_get_contents($sourceUrl, false, $context, 0, self::MAX_BYTES + 1);
-        if ($binary === false || $binary === '') {
-            throw new ChatImageException(
-                'download_failed',
-                'Could not download image URL or ChatGPT file reference.'
-            );
+    private function resolveRedirectUrl(string $base, string $location): string
+    {
+        $location = trim($location);
+        if ($location === '') {
+            throw new ChatImageException('download_failed', 'Redirect location is empty.');
+        }
+        if (preg_match('#^https?://#i', $location)) {
+            return $location;
         }
 
-        return $binary;
+        $baseParts = parse_url($base);
+        if (!is_array($baseParts) || empty($baseParts['scheme']) || empty($baseParts['host'])) {
+            throw new ChatImageException('download_failed', 'Could not resolve image redirect.');
+        }
+        $scheme = strtolower((string)$baseParts['scheme']);
+        if (str_starts_with($location, '//')) {
+            return $scheme . ':' . $location;
+        }
+
+        $authority = $scheme . '://' . $baseParts['host'];
+        if (isset($baseParts['port'])) {
+            $authority .= ':' . (int)$baseParts['port'];
+        }
+        if (str_starts_with($location, '/')) {
+            return $authority . $location;
+        }
+
+        $basePath = (string)($baseParts['path'] ?? '/');
+        $dir = str_ends_with($basePath, '/') ? $basePath : dirname($basePath) . '/';
+        $path = $dir . $location;
+        $query = '';
+        if (str_contains($path, '?')) {
+            [$path, $query] = explode('?', $path, 2);
+            $query = '?' . $query;
+        }
+        $segments = [];
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
+        return $authority . '/' . implode('/', $segments) . $query;
     }
 
     private function isPublicIp(string $ip): bool
     {
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            return (bool)filter_var(
-                $ip,
-                FILTER_VALIDATE_IP,
-                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
-            );
-        }
-
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            $lower = strtolower($ip);
-            if ($lower === '::1' || str_starts_with($lower, 'fc') || str_starts_with($lower, 'fd')) {
-                return false;
-            }
-            if (preg_match('/^fe[89ab][0-9a-f]:/i', $lower)) {
-                return false;
-            }
-            return true;
-        }
-
-        return false;
+        return filter_var(
+            $ip,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        ) !== false;
     }
 
     private function publicUrl(string $filename): string
@@ -237,7 +341,7 @@ class ChatImageService
 
         $host = (string)($_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'manage.bajistyle.ir');
         $host = trim(explode(',', $host)[0]);
-        if (!preg_match('/^[A-Za-z0-9.-]+(?::\\d{1,5})?$/', $host)) {
+        if (!preg_match('/^[A-Za-z0-9.-]+(?::\d{1,5})?$/', $host)) {
             $host = 'manage.bajistyle.ir';
         }
 
