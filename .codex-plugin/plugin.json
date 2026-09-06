@@ -1,0 +1,29 @@
+{
+  "name": "bajistyle-wc-manager",
+  "version": "1.1.0",
+  "description": "Manage WooCommerce products, WordPress media/articles, and Basalam catalog operations through a scoped MCP integration.",
+  "author": {
+    "name": "BajiStyle",
+    "url": "https://manage.bajistyle.ir/plugin.php"
+  },
+  "homepage": "https://manage.bajistyle.ir/plugin.php",
+  "repository": "https://github.com/ebrahimsadati1377-star/wc-manager",
+  "keywords": ["woocommerce", "wordpress", "basalam", "ecommerce", "media", "mcp"],
+  "interface": {
+    "displayName": "BajiStyle WC Manager",
+    "shortDescription": "Manage WooCommerce products, images, articles, and Basalam from ChatGPT.",
+    "longDescription": "BajiStyle WC Manager connects ChatGPT to controlled WooCommerce product operations, WordPress Media and article workflows, plus the configured Basalam vendor. Read and write permissions are separated with scoped OAuth access.",
+    "developerName": "BajiStyle",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://manage.bajistyle.ir/plugin.php",
+    "privacyPolicyURL": "https://manage.bajistyle.ir/plugin.php?page=privacy",
+    "termsOfServiceURL": "https://manage.bajistyle.ir/plugin.php?page=terms",
+    "defaultPrompt": [
+      "Find my WooCommerce product by name and show its current price and stock.",
+      "Upload this conversation image and attach it as the featured image of product 123.",
+      "Create a draft WordPress article from this text.",
+      "Sync WooCommerce product 123 to Basalam."
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "issuer": "https://manage.bajistyle.ir",
+  "authorization_endpoint": "https://manage.bajistyle.ir/oauth/authorize.php",
+  "token_endpoint": "https://manage.bajistyle.ir/oauth/token.php",
+  "revocation_endpoint": "https://manage.bajistyle.ir/oauth/revoke.php",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"],
+  "token_endpoint_auth_methods_supported": ["none"],
+  "scopes_supported": [
+    "store.read",
+    "store.write",
+    "media.write",
+    "articles.read",
+    "articles.write",
+    "basalam.read",
+    "basalam.write"
+  ],
+  "authorization_response_iss_parameter_supported": true,
+  "client_id_metadata_document_supported": true
+}
