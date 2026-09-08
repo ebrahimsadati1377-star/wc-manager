@@ -46,7 +46,7 @@ No WooCommerce, WordPress, or Basalam secret is exposed to the MCP client. Those
 
 `upload_and_attach_product_image` is the preferred end-to-end path. It:
 
-1. accepts `openaiFileIdRefs`, a public URL, or Base64;
+1. accepts the native ChatGPT MCP `file` input, legacy `openaiFileIdRefs`, a public URL, or Base64;
 2. permanently stores the image under WC Manager's `/uploads/chatgpt/` path;
 3. copies the file into the WordPress Media Library;
 4. receives the WordPress media ID;
@@ -141,3 +141,22 @@ A successful result contains three checkpoints:
 ## Deployment
 
 Production deploys automatically from `main` through the existing GitHub Actions deployment workflow. The `public/uploads/` directory remains server-owned and is excluded from rsync replacement, so imported media is preserved across deployments.
+
+## Native ChatGPT conversation files
+
+The two upload tools declare `_meta["openai/fileParams"]: ["file"]`.
+Pass one image at a time using `file`; ChatGPT supplies `download_url` and
+`file_id`, with optional `file_name` and `mime_type`. The server adapts this
+object to the existing image importer, retaining URL validation, size limits,
+and WordPress upload behavior. GPT Actions' `openaiFileIdRefs` is a separate
+legacy format and is not the native MCP file transport.
+
+For articles, use `upload_image` with `copy_to_wordpress: true`, then update the
+existing draft using its ID. Do not recreate an existing draft.
+
+This server change does not install a connection into a ChatGPT account.
+The client must connect to the MCP endpoint and refresh its tool catalog.
+Plugin publication/domain verification are separate account-side steps described
+in PLUGIN_SUBMISSION.md; a source commit does not complete them.
+
+Reference: https://developers.openai.com/plugins/reference#define-file-inputs

@@ -552,9 +552,41 @@ class WcManagerMcpServer
         }
     }
 
+    /**
+     * Adapt MCP file inputs to the existing, validated image importer.
+     * Keep legacy GPT Actions, URL and Base64 callers compatible.
+     */
+    private function normalizeFileInput(array $arguments): array
+    {
+        if (!array_key_exists('file', $arguments)) {
+            return $arguments;
+        }
+        $file = $arguments['file'];
+        if (!is_array($file)
+            || !is_string($file['download_url'] ?? null)
+            || trim($file['download_url']) === ''
+            || !is_string($file['file_id'] ?? null)
+            || trim($file['file_id']) === '') {
+            throw new McpToolException('file requires download_url and file_id supplied by ChatGPT.');
+        }
+        foreach (['url', 'image_url', 'base64', 'openaiFileIdRefs'] as $source) {
+            if (isset($arguments[$source]) && $arguments[$source] !== '' && $arguments[$source] !== []) {
+                throw new McpToolException('Provide only one image source when using file.');
+            }
+        }
+        $arguments['openaiFileIdRefs'] = [[
+            'download_link' => $file['download_url'],
+            'id' => $file['file_id'],
+            'name' => is_string($file['file_name'] ?? null) ? $file['file_name'] : '',
+            'mime_type' => is_string($file['mime_type'] ?? null) ? $file['mime_type'] : '',
+        ]];
+        unset($arguments['file']);
+        return $arguments;
+    }
+
     private function uploadImage(array $arguments): array
     {
-        $imported = $this->images->import($arguments);
+        $imported = $this->images->import($this->normalizeFileInput($arguments));
         $public = $imported;
         unset($public['local_path']);
 
@@ -574,7 +606,7 @@ class WcManagerMcpServer
     private function uploadAndAttachProductImage(array $arguments): array
     {
         $productId = $this->positiveInt($arguments['product_id'] ?? 0, 'product_id');
-        $imported = $this->images->import($arguments);
+        $imported = $this->images->import($this->normalizeFileInput($arguments));
 
         $wpMedia = $this->normalizeUpstream(
             $this->wc->uploadMedia($imported['local_path'], $imported['filename'])
@@ -708,6 +740,9 @@ class WcManagerMcpServer
             'name' => $name,
             'description' => $description,
             'inputSchema' => $inputSchema,
+            '_meta' => isset($inputSchema['properties']['file'])
+                ? ['openai/fileParams' => ['file']]
+                : (object)[],
             'annotations' => [
                 'title' => $title,
                 'readOnlyHint' => $readOnly,
@@ -721,6 +756,18 @@ class WcManagerMcpServer
     private function imageInputSchema(bool $includeCopyFlag): array
     {
         $properties = [
+            'file' => [
+                'type' => 'object',
+                'description' => 'One image attached or generated in this conversation. Pass each image separately.',
+                'properties' => [
+                    'download_url' => ['type' => 'string'],
+                    'file_id' => ['type' => 'string'],
+                    'mime_type' => ['type' => 'string'],
+                    'file_name' => ['type' => 'string'],
+                ],
+                'required' => ['download_url', 'file_id'],
+                'additionalProperties' => false,
+            ],
             'filename' => ['type' => 'string'],
             'openaiFileIdRefs' => [
                 'type' => 'array',
@@ -750,6 +797,7 @@ class WcManagerMcpServer
             'type' => 'object',
             'properties' => $properties,
             'anyOf' => [
+                ['required' => ['file']],
                 ['required' => ['openaiFileIdRefs']],
                 ['required' => ['url']],
                 ['required' => ['image_url']],
@@ -837,7 +885,7 @@ class WcManagerMcpServer
         return [
             'name' => 'bajistyle-wc-manager',
             'title' => 'BajiStyle WC Manager',
-            'version' => '1.0.0',
+            'version' => '1.0.1',
         ];
     }
 
