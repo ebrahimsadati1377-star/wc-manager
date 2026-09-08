@@ -176,7 +176,7 @@ function mcpValidateModernHeaders(array $request): void
         return;
     }
 
-    if ($protocol !== WcManagerMcpServer::LATEST_PROTOCOL) {
+    if (!in_array($protocol, [WcManagerMcpServer::LATEST_PROTOCOL, WcManagerMcpServer::LEGACY_PROTOCOL], true)) {
         mcpHttpJson(400, [
             'jsonrpc' => '2.0',
             'id' => $request['id'] ?? null,
