@@ -89,7 +89,7 @@ $body = $errorHtml . '
       ' . $hidden . '
       <input type="hidden" name="csrf_token" value="' . e(csrfToken()) . '">
       <button class="secondary" type="submit" name="action" value="deny">رد کردن</button>
-      <a class="approve-link" href="<?= e(oauthApproveUrl($request)) ?>">تأیید اتصال</a>
+      <a class="approve-link" href="' . e(oauthApproveUrl($request)) . '">تأیید اتصال</a>
     </form>
     <p class="muted"><a href="../plugin.php?page=privacy">Privacy Policy</a> · <a href="../plugin.php?page=terms">Terms</a></p>';
 oauthRenderPage('اجازه دسترسی WC Manager', $body, 200);
