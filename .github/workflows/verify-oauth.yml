@@ -1,5 +1,8 @@
 name: Verify OAuth discovery
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-oauth.yml']
   workflow_dispatch:
 permissions:
   contents: read
