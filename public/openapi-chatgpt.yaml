@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: BajiStyle WooCommerce Manager API
-  version: 1.4.0
+  version: 1.4.1
   description: Secure WooCommerce product-management API exposed by WC Manager for ChatGPT.
 servers:
   - url: https://manage.bajistyle.ir/api
@@ -59,14 +59,9 @@ paths:
                   minItems: 1
                   maxItems: 1
                   description: Exactly one image from the current ChatGPT conversation, including a generated image. This special GPT Actions field is populated automatically by ChatGPT when a conversation file is selected for the action.
+                  # GPT Actions substitutes these file IDs with download objects at runtime.
                   items:
-                    type: object
-                    required: [download_link]
-                    properties:
-                      name: { type: string }
-                      id: { type: string }
-                      mime_type: { type: string }
-                      download_link: { type: string, format: uri }
+                    type: string
                 url: { type: string, format: uri, description: Public http/https URL of the image. }
                 image_url: { type: string, format: uri, description: Alias for url. }
                 base64: { type: string, description: Optional Base64 image bytes or data URL. Use only when no conversation file or public URL is available. }
@@ -83,9 +78,9 @@ paths:
     get:
       operationId: listProducts
       summary: List/search WooCommerce products.
-            parameters:
-                    - { name: search, in: query, required: false, schema: { type: string } }
-                            - { name: per_page, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 10, default: 5 } }
+      parameters:
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: per_page, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 10, default: 5 } }
       responses: { '200': { description: Product list } }
     post:
       operationId: createProduct
