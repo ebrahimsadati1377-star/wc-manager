@@ -28,7 +28,7 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           ssh -p "${DEPLOY_PORT:-22}" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
-          id -u
-          ls -l /etc/nginx/sites-enabled
-          nginx -T 2>&1 | grep -E '^# configuration file|server_name|location|root |deny |allow |try_files' || true
+          cat /etc/nginx/sites-available/wc-manager
+          sudo -n -l
+          sudo -n nginx -t
           REMOTE
