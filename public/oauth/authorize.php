@@ -7,7 +7,7 @@ header('Pragma: no-cache');
 
 $oauth = new WcManagerOAuthService();
 $input = array_merge($_GET, $_POST);
-$action = trim((string)($_POST['action'] ?? ''));
+$action = trim((string)($_POST['action'] ?? $_GET['action'] ?? ''));
 $wasPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
 $errorMessage = '';
 
@@ -17,8 +17,9 @@ try {
     oauthRenderPage('Authorization request rejected', '<p>' . e($e->getMessage()) . '</p>', 400);
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!checkCsrf()) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' || ($action === 'approve' && isset($_GET['csrf_token']))) {
+    $csrfValid = $_SERVER['REQUEST_METHOD'] === 'POST' ? checkCsrf() : (!empty($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], (string)$_GET['csrf_token']));
+    if (!$csrfValid) {
         $errorMessage = 'نشست معتبر نیست یا درخواست تأیید به سرور نرسیده است. صفحه را تازه‌سازی کنید و دوباره تأیید کنید.';
     } elseif ($action === 'login') {
         $username = trim((string)($_POST['username'] ?? ''));
@@ -88,10 +89,27 @@ $body = $errorHtml . '
       ' . $hidden . '
       <input type="hidden" name="csrf_token" value="' . e(csrfToken()) . '">
       <button class="secondary" type="submit" name="action" value="deny">رد کردن</button>
-      <button type="submit" name="action" value="approve">تأیید اتصال</button>
+      <a class="approve-link" href="<?= e(oauthApproveUrl($request)) ?>">تأیید اتصال</a>
     </form>
     <p class="muted"><a href="../plugin.php?page=privacy">Privacy Policy</a> · <a href="../plugin.php?page=terms">Terms</a></p>';
 oauthRenderPage('اجازه دسترسی WC Manager', $body, 200);
+
+function oauthApproveUrl(array $request): string
+{
+    $params = [
+        'response_type' => 'code',
+        'client_id' => $request['client_id'],
+        'redirect_uri' => $request['redirect_uri'],
+        'scope' => $request['scope'],
+        'state' => $request['state'],
+        'resource' => $request['resource'],
+        'code_challenge' => $request['code_challenge'],
+        'code_challenge_method' => 'S256',
+        'action' => 'approve',
+        'csrf_token' => csrfToken(),
+    ];
+    return '/oauth/authorize.php?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+}
 
 function oauthHiddenInputs(array $request): string
 {
@@ -126,7 +144,7 @@ function oauthRenderPage(string $title, string $body, int $status): void
 <html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title><?= e($title) ?></title>
 <style>
-body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f7f9;color:#16181d;margin:0;padding:32px 16px}.card{max-width:620px;margin:5vh auto;background:#fff;border:1px solid #e4e7ec;border-radius:20px;padding:28px;box-shadow:0 14px 40px rgba(16,24,40,.08)}h1{font-size:1.5rem;margin:0 0 16px}p{line-height:1.8}label{display:block;margin:14px 0;font-weight:650}input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #cfd5df;border-radius:10px;font:inherit}button{border:0;border-radius:10px;padding:12px 18px;font:inherit;font-weight:700;background:#111827;color:#fff;cursor:pointer}.secondary{background:#e9edf3;color:#111827}.actions{display:flex;gap:10px;justify-content:flex-start;margin-top:20px}.notice{background:#f1f5f9;border-radius:12px;padding:12px 14px;line-height:1.7}.notice.error{background:#fef2f2;color:#991b1b}.muted{font-size:.9rem;color:#667085}.scopes{padding-right:22px}.scopes li{margin:12px 0;line-height:1.55}.scopes span{color:#475467}a{color:#175cd3}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f7f9;color:#16181d;margin:0;padding:32px 16px}.card{max-width:620px;margin:5vh auto;background:#fff;border:1px solid #e4e7ec;border-radius:20px;padding:28px;box-shadow:0 14px 40px rgba(16,24,40,.08)}h1{font-size:1.5rem;margin:0 0 16px}p{line-height:1.8}label{display:block;margin:14px 0;font-weight:650}input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #cfd5df;border-radius:10px;font:inherit}button{border:0;border-radius:10px;padding:12px 18px;font:inherit;font-weight:700;background:#111827;color:#fff;cursor:pointer}.secondary{background:#e9edf3;color:#111827}.actions{display:flex;gap:10px;justify-content:flex-start;margin-top:20px}.notice{background:#f1f5f9;border-radius:12px;padding:12px 14px;line-height:1.7}.notice.error{background:#fef2f2;color:#991b1b}.muted{font-size:.9rem;color:#667085}.scopes{padding-right:22px}.scopes li{margin:12px 0;line-height:1.55}.scopes span{color:#475467}a{color:#175cd3}.approve-link{display:inline-block;border-radius:10px;padding:12px 18px;font:inherit;font-weight:700;background:#111827;color:#fff;text-decoration:none}
 </style></head><body><main class="card"><h1><?= e($title) ?></h1><?= $body ?></main></body></html><?php
     exit;
 }
