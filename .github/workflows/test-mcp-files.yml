@@ -1,0 +1,22 @@
+name: MCP file regression tests
+on:
+  pull_request:
+    paths:
+      - 'includes/McpServer.php'
+      - 'tests/mcp-file-input.php'
+      - '.github/workflows/test-mcp-files.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'includes/McpServer.php'
+      - 'tests/mcp-file-input.php'
+      - '.github/workflows/test-mcp-files.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: php -l includes/McpServer.php
+      - run: php tests/mcp-file-input.php
