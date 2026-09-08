@@ -84,7 +84,7 @@ $body = $errorHtml . '
     <p>ChatGPT درخواست دسترسی به WC Manager را دارد. حساب متصل: <strong>' . e((string)($user['username'] ?? 'admin')) . '</strong></p>
     <ul class="scopes">' . $scopeItems . '</ul>
     <div class="notice">هیچ Consumer Secret ووکامرس، WordPress App Password یا توکن باسلام به ChatGPT داده نمی‌شود. عملیات نوشتن فقط از طریق ابزارهای مشخص Plugin انجام می‌شود.</div>
-    <form method="post" action="/oauth/authorize.php" target="_top" class="actions" onsubmit="this.querySelectorAll('button').forEach(function(button){button.disabled=true;}); return true;">
+    <form method="post" action="/oauth/authorize.php" target="_top" class="actions">
       ' . $hidden . '
       <input type="hidden" name="csrf_token" value="' . e(csrfToken()) . '">
       <button class="secondary" type="submit" name="action" value="deny">رد کردن</button>
