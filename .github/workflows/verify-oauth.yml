@@ -1,0 +1,19 @@
+name: Verify OAuth discovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify public metadata endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in             https://manage.bajistyle.ir/.well-known/oauth-protected-resource             https://manage.bajistyle.ir/.well-known/oauth-protected-resource/mcp.php             https://manage.bajistyle.ir/.well-known/oauth-authorization-server; do
+            code="$(curl -L --silent --show-error --output /tmp/oauth.json --write-out '%{http_code}' --max-time 20 "$url")"
+            test "$code" = 200
+            python3 -c 'import json; json.load(open("/tmp/oauth.json"))'
+            echo "Verified $url"
+          done
