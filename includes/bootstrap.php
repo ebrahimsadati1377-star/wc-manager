@@ -14,10 +14,13 @@ if (PHP_SAPI !== 'cli') {
 
 // Apply native session defaults when config.php has not started the session yet.
 if (session_status() === PHP_SESSION_NONE) {
+    // OAuth consent is posted from the ChatGPT host; SameSite=None is required
+    // for that cross-site POST while Secure keeps the cookie HTTPS-only.
+    $sessionSameSite = str_contains((string)($_SERVER['REQUEST_URI'] ?? ''), '/oauth/') ? 'None' : 'Lax';
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
     ini_set('session.cookie_httponly', '1');
-    ini_set('session.cookie_samesite', 'Lax');
+    ini_set('session.cookie_samesite', $sessionSameSite);
     if ($isHttps) {
         ini_set('session.cookie_secure', '1');
     }
@@ -46,7 +49,7 @@ if (
         'domain' => $params['domain'] ?? '',
         'secure' => $isHttps,
         'httponly' => true,
-        'samesite' => 'Lax',
+        'samesite' => (str_contains((string)($_SERVER['REQUEST_URI'] ?? ''), '/oauth/') ? 'None' : 'Lax'),
     ]);
 }
 
