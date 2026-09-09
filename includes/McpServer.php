@@ -102,7 +102,7 @@ class WcManagerMcpServer
                 'check_connection',
                 'Check WC Manager connections',
                 'Checks WooCommerce and Basalam connectivity/configuration without modifying data.',
-                ['type' => 'object', 'properties' => [], 'additionalProperties' => false],
+                ['type' => 'object', 'properties' => (object)[], 'additionalProperties' => false],
                 true,
                 false,
                 true
