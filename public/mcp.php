@@ -6,7 +6,7 @@ require_once __DIR__ . '/../includes/OAuthService.php';
 require_once __DIR__ . '/../includes/McpServer.php';
 
 header('Content-Type: application/json; charset=utf-8');
-header('MCP-Protocol-Version: ' . WcManagerMcpServer::LATEST_PROTOCOL);
+
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store, private');
 
@@ -49,6 +49,11 @@ if ($requestMethod === 'tools/call') {
 }
 
 $response = $server->dispatch($decoded);
+// Keep the response header consistent with the negotiated/requested version.
+$responseProtocol = $response['result']['protocolVersion'] ?? ($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? '2025-03-26');
+if (in_array($responseProtocol, WcManagerMcpServer::SUPPORTED_PROTOCOLS, true)) {
+    header('MCP-Protocol-Version: ' . $responseProtocol);
+}
 if ($response === null) {
     http_response_code(202);
     exit;
@@ -176,7 +181,7 @@ function mcpValidateModernHeaders(array $request): void
         return;
     }
 
-    if (!in_array($protocol, [WcManagerMcpServer::LATEST_PROTOCOL, WcManagerMcpServer::LEGACY_PROTOCOL], true)) {
+    if (!in_array($protocol, WcManagerMcpServer::SUPPORTED_PROTOCOLS, true)) {
         mcpHttpJson(400, [
             'jsonrpc' => '2.0',
             'id' => $request['id'] ?? null,

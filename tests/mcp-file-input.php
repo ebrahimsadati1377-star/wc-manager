@@ -42,6 +42,11 @@ foreach ($server->tools() as $tool) {
         check($schema['properties'][$key]['type'] === 'string', 'Missing file property');
     }
 }
+foreach (WcManagerMcpServer::SUPPORTED_PROTOCOLS as $version) {
+    $init = $server->dispatch(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'initialize',
+        'params' => ['protocolVersion' => $version]]);
+    check($init['result']['protocolVersion'] === $version, 'Negotiation changed a supported version');
+}
 $file = ['download_url' => 'https://example.org/signed.jpg', 'file_id' => 'file_test'];
 $result = $server->callTool('upload_image', ['file' => $file, 'copy_to_wordpress' => true]);
 check(!$result['isError'], 'MCP file upload failed');
