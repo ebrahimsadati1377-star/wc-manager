@@ -102,7 +102,7 @@ class WcManagerMcpServer
                 'check_connection',
                 'Check WC Manager connections',
                 'Checks WooCommerce and Basalam connectivity/configuration without modifying data.',
-                ['type' => 'object', 'properties' => [], 'additionalProperties' => false],
+                ['type' => 'object', 'properties' => (object)[], 'additionalProperties' => false],
                 true,
                 false,
                 true
@@ -740,7 +740,7 @@ class WcManagerMcpServer
             'name' => $name,
             'description' => $description,
             'inputSchema' => $inputSchema,
-            '_meta' => isset($inputSchema['properties']['file'])
+            '_meta' => (is_array($inputSchema['properties']) && isset($inputSchema['properties']['file']))
                 ? ['openai/fileParams' => ['file']]
                 : (object)[],
             'annotations' => [

@@ -28,6 +28,11 @@ function check($condition, $message): void {
 $wc = new WooCommerceClient();
 $images = new ChatImageService();
 $server = new WcManagerMcpServer($wc, new BasalamClient(), $images);
+// Validate the serialized discovery contract, including zero-argument tools.
+$wire = json_decode(json_encode($server->dispatch(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])));
+foreach ($wire->result->tools as $descriptor) {
+    check(is_object($descriptor->inputSchema->properties), $descriptor->name . ': properties must serialize as an object');
+}
 foreach ($server->tools() as $tool) {
     if (!in_array($tool['name'], ['upload_image', 'upload_and_attach_product_image'], true)) { continue; }
     check($tool['_meta']['openai/fileParams'] === ['file'], 'File metadata missing');
