@@ -15,6 +15,7 @@ class WcManagerMcpServer
 {
     public const LATEST_PROTOCOL = '2026-07-28';
     public const LEGACY_PROTOCOL = '2025-11-25';
+    public const SUPPORTED_PROTOCOLS = [self::LATEST_PROTOCOL, self::LEGACY_PROTOCOL, '2025-06-18', '2025-03-26'];
 
     private WooCommerceClient $wc;
     private BasalamClient $basalam;
@@ -57,7 +58,7 @@ class WcManagerMcpServer
 
                 case 'initialize':
                     $requested = trim((string)($params['protocolVersion'] ?? self::LEGACY_PROTOCOL));
-                    $protocol = in_array($requested, [self::LATEST_PROTOCOL, self::LEGACY_PROTOCOL], true)
+                    $protocol = in_array($requested, self::SUPPORTED_PROTOCOLS, true)
                         ? $requested
                         : self::LEGACY_PROTOCOL;
                     return $this->rpcResult($id, [
