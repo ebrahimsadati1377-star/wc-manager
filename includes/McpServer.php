@@ -740,7 +740,7 @@ class WcManagerMcpServer
             'name' => $name,
             'description' => $description,
             'inputSchema' => $inputSchema,
-            '_meta' => isset($inputSchema['properties']['file'])
+            '_meta' => (is_array($inputSchema['properties']) && isset($inputSchema['properties']['file']))
                 ? ['openai/fileParams' => ['file']]
                 : (object)[],
             'annotations' => [
