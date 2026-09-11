@@ -98,6 +98,29 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "test -d '$DEPLOY_PATH' && test -w '$DEPLOY_PATH' && printf 'SSH/deploy path OK\\n'"
 
+      - name: Check production disk capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && bash -s" <<'REMOTE'
+          set -euo pipefail
+          echo 'Disk capacity:'
+          df -Pk . | tail -1 | awk '{print "total_KB=" $2, "used_KB=" $3, "available_KB=" $4, "used=" $5}'
+          echo 'Inode capacity:'
+          df -Pi . | tail -1 | awk '{print "total=" $2, "used=" $3, "free=" $4, "used_percent=" $5}'
+          echo 'Deployment backup sizes (KB):'
+          if test -d .deploy-backups; then
+            du -sk .deploy-backups/* 2>/dev/null | sort -n | tail -20 || true
+          fi
+          available=$(df -Pk . | tail -1 | awk '{print $4}')
+          if (( available < 51200 )); then
+            echo 'Insufficient free space: at least 50 MiB required before copying production files. No backups were removed.'
+            exit 1
+          fi
+          REMOTE
+
       - name: Deploy with backup
         shell: bash
         run: |
