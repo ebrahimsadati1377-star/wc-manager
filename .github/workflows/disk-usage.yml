@@ -1,0 +1,55 @@
+name: Read-only disk usage report
+on:
+  push:
+    branches: [diagnostics/disk-usage-20260911]
+    paths: ['.github/workflows/disk-usage.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 8
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+
+      - name: Read disk usage without deleting files
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && bash -s" <<'REMOTE'
+          set -uo pipefail
+          echo 'REPORT START'
+          df -h .
+          df -i .
+          echo 'Deployment directory (KB)'
+          timeout 45 du -xk --max-depth=2 . 2>/dev/null | sort -n | tail -20
+          echo 'Filesystem top-level directories (KB; inaccessible directories excluded)'
+          timeout 60 du -xk --max-depth=1 / 2>/dev/null | sort -n | tail -20
+          echo 'Var subdirectories (KB)'
+          timeout 45 du -xk --max-depth=2 /var 2>/dev/null | sort -n | tail -20
+          echo 'Home and opt subdirectories (KB)'
+          timeout 45 du -xk --max-depth=2 /home /opt 2>/dev/null | sort -n | tail -20
+          echo 'Journal size'
+          timeout 10 journalctl --disk-usage 2>/dev/null || true
+          echo 'REPORT END'
+          REMOTE
