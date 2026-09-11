@@ -51,5 +51,13 @@ jobs:
           timeout 45 du -xk --max-depth=2 /home /opt 2>/dev/null | sort -n | tail -20
           echo 'Journal size'
           timeout 10 journalctl --disk-usage 2>/dev/null || true
+          echo 'Privileged disk totals (only if already permitted by sudo)'
+          timeout 60 sudo -n du -xk --max-depth=1 / 2>/dev/null | sort -n | tail -20
+          echo "privileged_scan_status=${PIPESTATUS[0]}"
+          timeout 60 sudo -n du -xk --max-depth=2 /var /root 2>/dev/null | sort -n | tail -25
+          echo "privileged_detail_status=${PIPESTATUS[0]}"
+          echo 'Deleted-open file sizes by process (no filenames)'
+          timeout 15 sudo -n lsof -nP +L1 2>/dev/null | awk 'NR==1 {print "COMMAND PID SIZE NLINK";next} {print $1,$2,$7,$8}' | head -25
+          echo "deleted_open_scan_status=${PIPESTATUS[0]}"
           echo 'REPORT END'
           REMOTE
