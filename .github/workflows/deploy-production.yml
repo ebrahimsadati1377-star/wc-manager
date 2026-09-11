@@ -37,6 +37,9 @@ jobs:
           done < <(find . -type f -name '*.php' -not -path './.git/*' -print0)
           echo "PHP lint passed."
 
+      - name: Test OAuth error responses
+        run: php tests/oauth-authorize.php
+
       - name: Check deployment configuration
         id: deploy_secrets
         shell: bash
@@ -128,6 +131,27 @@ jobs:
           ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -e; find '$DEPLOY_PATH/includes' '$DEPLOY_PATH/public' -type f -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null; echo 'Remote PHP lint passed.'"
+
+      - name: Verify deployed OAuth file hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          sha256sum public/oauth/authorize.php includes/OAuthService.php includes/bootstrap.php public/mcp.php includes/McpServer.php > /tmp/oauth-sha256
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && sha256sum -c -" < /tmp/oauth-sha256
+
+      - name: Verify live OAuth response
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /tmp/oauth-response --write-out '%{http_code}' --max-time 25 https://manage.bajistyle.ir/oauth/authorize.php)"
+          # Missing parameters must produce a rendered rejection, not a blank 200/500.
+          test "$code" = 400
+          grep -q 'Authorization request rejected' /tmp/oauth-response
+          grep -q '</html>' /tmp/oauth-response
+          echo 'OAuth invalid-request response verified (HTTP 400, rendered HTML). This is not an authenticated ChatGPT connection test.'
 
       - name: Health check
         shell: bash

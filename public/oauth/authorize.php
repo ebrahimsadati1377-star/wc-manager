@@ -1,4 +1,6 @@
 <?php
+// Catch bootstrap, database and runtime failures before they become blank pages.
+try {
 require_once __DIR__ . '/../../includes/bootstrap.php';
 require_once __DIR__ . '/../../includes/OAuthService.php';
 
@@ -93,6 +95,16 @@ $body = $errorHtml . '
     </form>
     <p class="muted"><a href="../plugin.php?page=privacy">Privacy Policy</a> · <a href="../plugin.php?page=terms">Terms</a></p>';
 oauthRenderPage('اجازه دسترسی WC Manager', $body, 200);
+
+} catch (Throwable $error) {
+    // Keep credentials and database details in server logs, never in the browser.
+    error_log('[wc-manager] OAuth authorization failed: ' . get_class($error) . ': ' . $error->getMessage());
+    http_response_code(500);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo '<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><title>خطای اتصال</title><body><h1>اتصال موقتاً در دسترس نیست</h1><p>خطای داخلی در تأیید اتصال رخ داده است. مدیر سایت باید گزارش خطای OAuth را بررسی کند.</p></body></html>';
+    exit;
+}
 
 function oauthApproveUrl(array $request): string
 {
