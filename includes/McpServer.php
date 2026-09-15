@@ -563,12 +563,17 @@ class WcManagerMcpServer
             return $arguments;
         }
         $file = $arguments['file'];
+        // ChatGPT native file inputs are normally hydrated by the connector into
+        // metadata. Keep accepting the legacy metadata object for compatibility.
+        if (is_string($file)) {
+            throw new McpToolException('Native ChatGPT file input was not hydrated by the connector. Refresh/reconnect the MCP tool so file parameters are injected.');
+        }
         if (!is_array($file)
             || !is_string($file['download_url'] ?? null)
             || trim($file['download_url']) === ''
             || !is_string($file['file_id'] ?? null)
             || trim($file['file_id']) === '') {
-            throw new McpToolException('file requires download_url and file_id supplied by ChatGPT.');
+            throw new McpToolException('file requires ChatGPT-injected download_url and file_id.');
         }
         foreach (['url', 'image_url', 'base64', 'openaiFileIdRefs'] as $source) {
             if (isset($arguments[$source]) && $arguments[$source] !== '' && $arguments[$source] !== []) {
@@ -758,16 +763,8 @@ class WcManagerMcpServer
     {
         $properties = [
             'file' => [
-                'type' => 'object',
-                'description' => 'One image attached or generated in this conversation. Pass each image separately.',
-                'properties' => [
-                    'download_url' => ['type' => 'string'],
-                    'file_id' => ['type' => 'string'],
-                    'mime_type' => ['type' => 'string'],
-                    'file_name' => ['type' => 'string'],
-                ],
-                'required' => ['download_url', 'file_id'],
-                'additionalProperties' => false,
+                'type' => 'string',
+                'description' => 'One image attached or generated in this ChatGPT conversation. This is a native ChatGPT file input; the connector injects its secure download metadata automatically.',
             ],
             'filename' => ['type' => 'string'],
             'openaiFileIdRefs' => [
