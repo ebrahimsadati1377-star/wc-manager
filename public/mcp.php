@@ -103,9 +103,10 @@ function mcpApplySubmissionPolicy(array $tool): array
 function mcpValidateModernHeaders(array $request): void
 {
     $protocol = trim((string)($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? ''));
-    if ($protocol !== '' && !in_array($protocol, WcManagerMcpServer::SUPPORTED_PROTOCOLS, true)) {
-        mcpHttpJson(400, ['jsonrpc'=>'2.0','id'=>$request['id'] ?? null,'error'=>['code'=>-32020,'message'=>'Unsupported MCP protocol version.','data'=>['supported'=>[WcManagerMcpServer::LATEST_PROTOCOL,WcManagerMcpServer::LEGACY_PROTOCOL]]]]);
-    }
+    // Be forward-compatible during MCP discovery. Clients may probe with a newer
+    // protocol header before initialize negotiates the version. Rejecting that
+    // probe at HTTP level makes ChatGPT report "action discovery failed".
+    // initialize() below performs protocol negotiation and returns a supported version.
     $bodyMethod = trim((string)($request['method'] ?? ''));
     $headerMethod = trim((string)($_SERVER['HTTP_MCP_METHOD'] ?? ''));
     if ($headerMethod !== '' && $bodyMethod !== '' && $headerMethod !== $bodyMethod) mcpHttpJson(400, ['jsonrpc'=>'2.0','id'=>$request['id'] ?? null,'error'=>['code'=>-32020,'message'=>'Mcp-Method header does not match JSON-RPC method.']]);
