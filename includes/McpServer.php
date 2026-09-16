@@ -13,9 +13,10 @@ class McpToolException extends RuntimeException
 
 class WcManagerMcpServer
 {
-    public const LATEST_PROTOCOL = '2025-06-18';
+    public const LATEST_PROTOCOL = '2026-07-28';
+    public const STANDARD_PROTOCOL = '2025-06-18';
     public const LEGACY_PROTOCOL = '2025-03-26';
-    public const SUPPORTED_PROTOCOLS = [self::LATEST_PROTOCOL, self::LEGACY_PROTOCOL];
+    public const SUPPORTED_PROTOCOLS = [self::LATEST_PROTOCOL, self::STANDARD_PROTOCOL, self::LEGACY_PROTOCOL];
 
     private WooCommerceClient $wc;
     private BasalamClient $basalam;
