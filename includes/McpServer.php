@@ -868,8 +868,16 @@ class WcManagerMcpServer
     {
         $properties = [
             'file' => [
-                'type' => 'string',
-                'description' => 'One image attached or generated in this ChatGPT conversation. This is a native ChatGPT file input; the connector injects its secure download metadata automatically.',
+                'type' => 'object',
+                'required' => ['download_url', 'file_id'],
+                'properties' => [
+                    'download_url' => ['type' => 'string', 'format' => 'uri'],
+                    'file_id' => ['type' => 'string'],
+                    'file_name' => ['type' => 'string'],
+                    'mime_type' => ['type' => 'string'],
+                ],
+                'additionalProperties' => true,
+                'description' => 'One image attached or generated in this ChatGPT conversation. The connector injects secure download metadata automatically.',
             ],
             'filename' => ['type' => 'string'],
             'openaiFileIdRefs' => [
