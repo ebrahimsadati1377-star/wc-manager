@@ -1,128 +1,77 @@
 <?php
 
-/**
- * SMS extension for the WC Manager MCP server.
- * Keeps the core MCP implementation untouched while exposing IPPanel tools.
- */
+require_once __DIR__ . '/ProductImageGenerator.php';
+
+/** SMS + product-image extensions for WC Manager MCP. */
 class WcManagerSmsMcpServer extends WcManagerMcpServer
 {
     private IPPanelClient $sms;
+    private ProductImageGenerator $productImages;
 
-    public function __construct(?IPPanelClient $sms = null)
+    public function __construct(?IPPanelClient $sms = null, ?ProductImageGenerator $productImages = null)
     {
         parent::__construct();
         $this->sms = $sms ?? new IPPanelClient();
+        $this->productImages = $productImages ?? new ProductImageGenerator();
     }
 
     public function tools(): array
     {
         $tools = parent::tools();
-        $tools[] = $this->smsTool(
-            'get_sms_status',
-            'Check BAJI SMS status',
-            'Checks whether the server-side IPPanel connection is configured. Never returns the API key.',
-            ['type' => 'object', 'properties' => (object)[], 'additionalProperties' => false],
-            true,
-            false,
-            true
-        );
-        $tools[] = $this->smsTool(
-            'send_sms',
-            'Send an SMS with BAJI IPPanel',
-            'Sends one explicitly provided SMS to one Iranian mobile number through the configured BAJI IPPanel account.',
+        $tools[] = $this->extensionTool('get_sms_status','Check BAJI SMS status','Checks whether the server-side IPPanel connection is configured. Never returns the API key.',['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],true,false,true);
+        $tools[] = $this->extensionTool('send_sms','Send an SMS with BAJI IPPanel','Sends one explicitly provided SMS to one Iranian mobile number through the configured BAJI IPPanel account.',['type'=>'object','required'=>['recipient','message'],'properties'=>['recipient'=>['type'=>'string','minLength'=>10,'maxLength'=>16,'description'=>'Iranian mobile number, e.g. 09xxxxxxxxx or +989xxxxxxxxx.'],'message'=>['type'=>'string','minLength'=>1,'maxLength'=>1000]],'additionalProperties'=>false],false,false,false);
+        $tools[] = $this->extensionTool(
+            'generate_product_images',
+            'Generate independent BAJI product images',
+            'Generates count independent product-image jobs. For count=7 it executes exactly seven separate image-generation requests; every request produces one photo, one frame, one pose and one independent file. Collages, grids, multi-panel and multi-view outputs are forbidden. Optionally uploads every generated file separately to WordPress Media.',
             [
-                'type' => 'object',
-                'required' => ['recipient', 'message'],
-                'properties' => [
-                    'recipient' => [
-                        'type' => 'string',
-                        'minLength' => 10,
-                        'maxLength' => 16,
-                        'description' => 'Iranian mobile number, e.g. 09xxxxxxxxx or +989xxxxxxxxx.',
-                    ],
-                    'message' => [
-                        'type' => 'string',
-                        'minLength' => 1,
-                        'maxLength' => 1000,
-                    ],
+                'type'=>'object',
+                'required'=>['product_name','product_reference_image','face_reference_image'],
+                'properties'=>[
+                    'product_name'=>['type'=>'string','minLength'=>1],
+                    'product_reference_image'=>['description'=>'Garment reference image URL or ChatGPT-hydrated file object with download_url.','oneOf'=>[['type'=>'string','format'=>'uri'],['type'=>'object','additionalProperties'=>true]]],
+                    'face_reference_image'=>['description'=>'Face reference image URL or ChatGPT-hydrated file object with download_url.','oneOf'=>[['type'=>'string','format'=>'uri'],['type'=>'object','additionalProperties'=>true]]],
+                    'count'=>['type'=>'integer','minimum'=>1,'maximum'=>10,'default'=>7],
+                    'aspect_ratio'=>['type'=>'string','enum'=>['9:16','16:9','1:1'],'default'=>'9:16'],
+                    'instructions'=>['type'=>'string','default'=>''],
+                    'wordpress_upload'=>['type'=>'boolean','default'=>false],
                 ],
-                'additionalProperties' => false,
+                'additionalProperties'=>false,
             ],
-            false,
-            false,
-            false
+            false,false,false
         );
         return $tools;
     }
 
     public function callTool(string $name, array $arguments): array
     {
-        if ($name === 'get_sms_status') {
-            return $this->smsResult($this->sms->status());
-        }
-
+        if ($name === 'get_sms_status') return $this->extensionResult($this->sms->status());
         if ($name === 'send_sms') {
             try {
-                $recipient = trim((string)($arguments['recipient'] ?? ''));
-                $message = trim((string)($arguments['message'] ?? ''));
-                if ($recipient === '' || $message === '') {
-                    return $this->smsError('recipient and message are required.');
-                }
-                $result = $this->sms->send($recipient, $message);
-                return $this->smsResult($result);
-            } catch (Throwable $e) {
-                return $this->smsError($e->getMessage());
-            }
+                $recipient=trim((string)($arguments['recipient']??'')); $message=trim((string)($arguments['message']??''));
+                if ($recipient===''||$message==='') return $this->extensionError('recipient and message are required.');
+                return $this->extensionResult($this->sms->send($recipient,$message));
+            } catch (Throwable $e) { return $this->extensionError($e->getMessage()); }
         }
-
-        return parent::callTool($name, $arguments);
+        if ($name === 'generate_product_images') {
+            try { return $this->extensionResult($this->productImages->generate($arguments)); }
+            catch (Throwable $e) { return $this->extensionError($e->getMessage()); }
+        }
+        return parent::callTool($name,$arguments);
     }
 
-    private function smsTool(
-        string $name,
-        string $title,
-        string $description,
-        array $inputSchema,
-        bool $readOnly,
-        bool $destructive,
-        bool $idempotent
-    ): array {
-        return [
-            'name' => $name,
-            'description' => $description,
-            'inputSchema' => $inputSchema,
-            '_meta' => (object)[],
-            'annotations' => [
-                'title' => $title,
-                'readOnlyHint' => $readOnly,
-                'destructiveHint' => $destructive,
-                'idempotentHint' => $idempotent,
-                'openWorldHint' => true,
-            ],
-        ];
-    }
-
-    private function smsResult(array $payload): array
+    private function extensionTool(string $name,string $title,string $description,array $inputSchema,bool $readOnly,bool $destructive,bool $idempotent): array
     {
-        return [
-            'content' => [[
-                'type' => 'text',
-                'text' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            ]],
-            'structuredContent' => $payload,
-            'isError' => false,
-        ];
+        return ['name'=>$name,'description'=>$description,'inputSchema'=>$inputSchema,'_meta'=>(object)[],'annotations'=>['title'=>$title,'readOnlyHint'=>$readOnly,'destructiveHint'=>$destructive,'idempotentHint'=>$idempotent,'openWorldHint'=>true]];
     }
 
-    private function smsError(string $message): array
+    private function extensionResult(array $payload): array
     {
-        return [
-            'content' => [[
-                'type' => 'text',
-                'text' => $message,
-            ]],
-            'structuredContent' => ['error' => $message],
-            'isError' => true,
-        ];
+        return ['content'=>[['type'=>'text','text'=>json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)]],'structuredContent'=>$payload,'isError'=>false];
+    }
+
+    private function extensionError(string $message): array
+    {
+        return ['content'=>[['type'=>'text','text'=>$message]],'structuredContent'=>['error'=>$message],'isError'=>true];
     }
 }
