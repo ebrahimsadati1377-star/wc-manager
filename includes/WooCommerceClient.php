@@ -213,6 +213,24 @@ class WooCommerceClient
         return $this->request('POST', 'wp-json/wp/v2/posts/' . $id, [], $body);
     }
 
+    public function updatePostSeoMeta(int $postId, array $seo): array
+    {
+        $meta = [];
+        $map = [
+            'focus_keyword' => 'rank_math_focus_keyword',
+            'seo_title' => 'rank_math_title',
+            'meta_description' => 'rank_math_description',
+            'canonical' => 'rank_math_canonical_url',
+        ];
+        foreach ($map as $input => $key) {
+            if (array_key_exists($input, $seo)) {
+                $meta[$key] = trim((string)$seo[$input]);
+            }
+        }
+        if (!$meta) return $this->failure('No Rank Math SEO fields were provided.');
+        return $this->request('POST', 'wp-json/wp/v2/posts/' . $postId, [], ['meta' => $meta]);
+    }
+
     public function deletePost(int $postId): array { return $this->request('DELETE', 'wp-json/wp/v2/posts/' . $postId, ['force' => 'true']); }
     public function setPostFeaturedImage(int $postId, int $mediaId): array { return $this->request('POST', 'wp-json/wp/v2/posts/' . $postId, [], ['featured_media' => $mediaId]); }
     public function getPostCategories(array $params = []): array { return $this->request('GET', 'wp-json/wp/v2/categories', array_merge(['per_page' => 100], $params)); }
