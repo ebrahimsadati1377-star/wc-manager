@@ -109,6 +109,15 @@ class WcManagerMcpServer
                 true
             ),
             $this->tool(
+                'check_ai_crawlers',
+                'Check AI search crawler access',
+                'Read-only diagnostic for bajistyle.ir robots.txt, sitemap, and HTTP access when requesting pages as OAI-SearchBot.',
+                ['type' => 'object', 'properties' => (object)[], 'additionalProperties' => false],
+                true,
+                false,
+                true
+            ),
+            $this->tool(
                 'search_products',
                 'Search WooCommerce products',
                 'Search and filter WooCommerce products. Returns IDs, names and full WooCommerce product payloads.',
@@ -385,6 +394,9 @@ class WcManagerMcpServer
                         'wordpress_media' => ['configured' => $this->wc->isWpConfigured()],
                         'basalam' => $basalam,
                     ]);
+
+                case 'check_ai_crawlers':
+                    return $this->toolSuccess($this->checkAiCrawlers());
 
                 case 'search_products':
                     $params = [];
@@ -704,6 +716,58 @@ class WcManagerMcpServer
         );
 
         return $updated;
+    }
+
+    private function checkAiCrawlers(): array
+    {
+        $base = 'https://bajistyle.ir';
+        $targets = [
+            'robots' => $base . '/robots.txt',
+            'sitemap' => $base . '/sitemap_index.xml',
+            'home' => $base . '/',
+        ];
+        $out = [];
+        foreach ($targets as $key => $url) {
+            $headers = [
+                'User-Agent: OAI-SearchBot/1.0; +https://openai.com/searchbot',
+                'Accept: text/html,application/xml,text/plain;q=0.9,*/*;q=0.8',
+            ];
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_CONNECTTIMEOUT => 8,
+                CURLOPT_TIMEOUT => 15,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_HEADER => true,
+                CURLOPT_NOBODY => false,
+            ]);
+            $raw = curl_exec($ch);
+            $error = curl_error($ch);
+            $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $finalUrl = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+            curl_close($ch);
+            $body = is_string($raw) ? substr($raw, $headerSize) : '';
+            $out[$key] = [
+                'url' => $url,
+                'final_url' => $finalUrl,
+                'status' => $status,
+                'ok' => $error === '' && $status >= 200 && $status < 400,
+                'error' => $error,
+                'content_type_hint' => $key,
+                'body_excerpt' => substr($body, 0, 12000),
+            ];
+        }
+        $robots = (string)($out['robots']['body_excerpt'] ?? '');
+        $out['analysis'] = [
+            'oai_searchbot_named' => stripos($robots, 'OAI-SearchBot') !== false,
+            'chatgpt_user_named' => stripos($robots, 'ChatGPT-User') !== false,
+            'robots_contains_disallow_all' => (bool)preg_match('/Disallow:\\s*\\/\\s*$/mi', $robots),
+            'note' => 'A robots rule must be interpreted by user-agent group; raw robots content is included for verification.',
+        ];
+        return $out;
     }
 
     private function normalizeUpstream(array $response, bool $throw = true): array
