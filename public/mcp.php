@@ -26,6 +26,18 @@ if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
 mcpValidateModernHeaders($decoded);
 $requestMethod = trim((string)($decoded['method'] ?? ''));
 $requestId = $decoded['id'] ?? null;
+$diag = [
+    'ts' => gmdate('c'),
+    'method' => $requestMethod,
+    'id_type' => gettype($requestId),
+    'protocol_header' => (string)($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? ''),
+    'accept' => (string)($_SERVER['HTTP_ACCEPT'] ?? ''),
+    'user_agent' => (string)($_SERVER['HTTP_USER_AGENT'] ?? ''),
+    'param_keys' => is_array($decoded['params'] ?? null) ? array_keys($decoded['params']) : [],
+    'requested_protocol' => (string)($decoded['params']['protocolVersion'] ?? ''),
+    'client_name' => (string)($decoded['params']['clientInfo']['name'] ?? ''),
+];
+@file_put_contents('/tmp/wc-mcp-discovery.log', json_encode($diag, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
 $server = new WcManagerSmsMcpServer();
 
 if ($requestMethod === 'tools/call') {
