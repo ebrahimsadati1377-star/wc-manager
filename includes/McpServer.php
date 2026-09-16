@@ -318,6 +318,32 @@ class WcManagerMcpServer
                 false
             ),
             $this->tool(
+                'update_article_seo',
+                'Update Rank Math SEO metadata',
+                'Updates Rank Math focus keyword, SEO title, meta description and canonical URL for one WordPress article, then returns the WordPress response for verification.',
+                [
+                    'type' => 'object',
+                    'required' => ['post_id'],
+                    'properties' => [
+                        'post_id' => ['type' => 'integer', 'minimum' => 1],
+                        'focus_keyword' => ['type' => 'string'],
+                        'seo_title' => ['type' => 'string'],
+                        'meta_description' => ['type' => 'string'],
+                        'canonical' => ['type' => 'string'],
+                    ],
+                    'anyOf' => [
+                        ['required' => ['focus_keyword']],
+                        ['required' => ['seo_title']],
+                        ['required' => ['meta_description']],
+                        ['required' => ['canonical']],
+                    ],
+                    'additionalProperties' => false,
+                ],
+                false,
+                false,
+                true
+            ),
+            $this->tool(
                 'list_basalam_products',
                 'List Basalam vendor products',
                 'Lists products from the configured Basalam vendor account.',
@@ -501,6 +527,21 @@ class WcManagerMcpServer
                     $categoryIds = $this->positiveIntList($arguments['category_ids'] ?? []);
                     return $this->toolSuccess($this->normalizeUpstream(
                         $this->wc->updatePostWithCategories($postId, $title, $content, $status, $categoryIds)
+                    ));
+
+                case 'update_article_seo':
+                    $postId = $this->positiveInt($arguments['post_id'] ?? 0, 'post_id');
+                    $seo = [];
+                    foreach (['focus_keyword', 'seo_title', 'meta_description', 'canonical'] as $key) {
+                        if (array_key_exists($key, $arguments)) {
+                            $seo[$key] = (string)$arguments[$key];
+                        }
+                    }
+                    if (!$seo) {
+                        throw new McpToolException('Provide at least one SEO field.');
+                    }
+                    return $this->toolSuccess($this->normalizeUpstream(
+                        $this->wc->updatePostSeoMeta($postId, $seo)
                     ));
 
                 case 'list_basalam_products':
