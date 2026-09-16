@@ -58,9 +58,11 @@ class WcManagerMcpServer
 
                 case 'initialize':
                     $requested = trim((string)($params['protocolVersion'] ?? self::LEGACY_PROTOCOL));
+                    // MCP initialize negotiation: when the client requests a newer
+                    // protocol version, reply with the newest version this server supports.
                     $protocol = in_array($requested, self::SUPPORTED_PROTOCOLS, true)
                         ? $requested
-                        : self::LEGACY_PROTOCOL;
+                        : self::LATEST_PROTOCOL;
                     return $this->rpcResult($id, [
                         'protocolVersion' => $protocol,
                         'capabilities' => ['tools' => (object)[]],
@@ -74,8 +76,6 @@ class WcManagerMcpServer
                 case 'tools/list':
                     return $this->rpcResult($id, [
                         'tools' => $this->tools(),
-                        'ttlMs' => 300000,
-                        'cacheScope' => 'private',
                     ]);
 
                 case 'tools/call':
