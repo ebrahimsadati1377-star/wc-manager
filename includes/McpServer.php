@@ -220,10 +220,6 @@ class WcManagerMcpServer
                         'name' => ['type' => 'string'],
                         'alt' => ['type' => 'string'],
                     ],
-                    'anyOf' => [
-                        ['required' => ['media_id']],
-                        ['required' => ['image_url']],
-                    ],
                     'additionalProperties' => false,
                 ],
                 false,
@@ -330,12 +326,6 @@ class WcManagerMcpServer
                         'seo_title' => ['type' => 'string'],
                         'meta_description' => ['type' => 'string'],
                         'canonical' => ['type' => 'string'],
-                    ],
-                    'anyOf' => [
-                        ['required' => ['focus_keyword']],
-                        ['required' => ['seo_title']],
-                        ['required' => ['meta_description']],
-                        ['required' => ['canonical']],
                     ],
                     'additionalProperties' => false,
                 ],
@@ -907,13 +897,6 @@ class WcManagerMcpServer
         return [
             'type' => 'object',
             'properties' => $properties,
-            'anyOf' => [
-                ['required' => ['file']],
-                ['required' => ['openaiFileIdRefs']],
-                ['required' => ['url']],
-                ['required' => ['image_url']],
-                ['required' => ['base64']],
-            ],
             'additionalProperties' => false,
         ];
     }
