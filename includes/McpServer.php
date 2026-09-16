@@ -13,9 +13,9 @@ class McpToolException extends RuntimeException
 
 class WcManagerMcpServer
 {
-    public const LATEST_PROTOCOL = '2026-07-28';
-    public const LEGACY_PROTOCOL = '2025-11-25';
-    public const SUPPORTED_PROTOCOLS = [self::LATEST_PROTOCOL, self::LEGACY_PROTOCOL, '2025-06-18', '2025-03-26'];
+    public const LATEST_PROTOCOL = '2025-06-18';
+    public const LEGACY_PROTOCOL = '2025-03-26';
+    public const SUPPORTED_PROTOCOLS = [self::LATEST_PROTOCOL, self::LEGACY_PROTOCOL];
 
     private WooCommerceClient $wc;
     private BasalamClient $basalam;
@@ -63,7 +63,7 @@ class WcManagerMcpServer
                         : self::LEGACY_PROTOCOL;
                     return $this->rpcResult($id, [
                         'protocolVersion' => $protocol,
-                        'capabilities' => ['tools' => ['listChanged' => false]],
+                        'capabilities' => ['tools' => (object)[]],
                         'serverInfo' => $this->serverInfo(),
                         'instructions' => 'WC Manager MCP exposes controlled WooCommerce, WordPress media/article, and Basalam product operations. Prefer upload_and_attach_product_image for conversation-image workflows.',
                     ]);
