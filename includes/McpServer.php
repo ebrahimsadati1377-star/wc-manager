@@ -51,10 +51,13 @@ class WcManagerMcpServer
         try {
             switch ($method) {
                 case 'server/discover':
+                    // ChatGPT action discovery expects the discover response itself
+                    // to expose the available actions, not only MCP capabilities.
                     return $this->rpcResult($id, [
                         'protocolVersion' => self::LATEST_PROTOCOL,
                         'serverInfo' => $this->serverInfo(),
                         'capabilities' => ['tools' => (object)[]],
+                        'tools' => $this->tools(),
                     ]);
 
                 case 'initialize':
