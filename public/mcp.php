@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/ChatGPTApi.php';
 require_once __DIR__ . '/../includes/ChatImageService.php';
 require_once __DIR__ . '/../includes/OAuthService.php';
 require_once __DIR__ . '/../includes/McpServer.php';
+require_once __DIR__ . '/../includes/McpSmsServer.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -37,11 +38,19 @@ if (!is_array($decoded) || json_last_error() !== JSON_ERROR_NONE) {
 mcpValidateModernHeaders($decoded);
 $requestMethod = trim((string)($decoded['method'] ?? ''));
 $requestId = $decoded['id'] ?? null;
-$server = new WcManagerMcpServer();
+$server = new WcManagerSmsMcpServer();
 
 if ($requestMethod === 'tools/call') {
     $toolName = trim((string)($decoded['params']['name'] ?? ''));
-    $requiredScopes = WcManagerOAuthService::toolScopes($toolName);
+    // SMS sending is an external side effect, so require an existing write grant.
+    // Status is read-only but still requires an authenticated BAJI connection.
+    if ($toolName === 'send_sms') {
+        $requiredScopes = ['store.write'];
+    } elseif ($toolName === 'get_sms_status') {
+        $requiredScopes = ['store.read'];
+    } else {
+        $requiredScopes = WcManagerOAuthService::toolScopes($toolName);
+    }
     $auth = mcpAuthenticate($requiredScopes);
     if (!$auth['ok']) {
         mcpHttpJson(200, mcpAuthRequiredResponse($requestId, $requiredScopes, $auth['error'], $auth['description']));
@@ -49,7 +58,6 @@ if ($requestMethod === 'tools/call') {
 }
 
 $response = $server->dispatch($decoded);
-// Keep the response header consistent with the negotiated/requested version.
 $responseProtocol = $response['result']['protocolVersion'] ?? ($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? '2025-03-26');
 if (in_array($responseProtocol, WcManagerMcpServer::SUPPORTED_PROTOCOLS, true)) {
     header('MCP-Protocol-Version: ' . $responseProtocol);
@@ -102,8 +110,6 @@ function mcpAuthenticate(array $requiredScopes): array
         error_log('[wc-manager] MCP OAuth validation failed: ' . $e->getMessage());
     }
 
-    // Backwards compatibility for existing GPT Action/API clients. Legacy tokens
-    // remain server-side and are not advertised as the public Plugin auth flow.
     $candidateHash = hash('sha256', $plain);
     foreach (chatgptApiTokenRecords() as $record) {
         if (hash_equals((string)$record['hash'], $candidateHash)) {
@@ -150,7 +156,13 @@ function mcpAuthRequiredResponse($id, array $scopes, string $error, string $desc
 function mcpApplySubmissionPolicy(array $tool): array
 {
     $name = trim((string)($tool['name'] ?? ''));
-    $scopes = WcManagerOAuthService::toolScopes($name);
+    if ($name === 'send_sms') {
+        $scopes = ['store.write'];
+    } elseif ($name === 'get_sms_status') {
+        $scopes = ['store.read'];
+    } else {
+        $scopes = WcManagerOAuthService::toolScopes($name);
+    }
     $tool['securitySchemes'] = [[
         'type' => 'oauth2',
         'scopes' => $scopes,
