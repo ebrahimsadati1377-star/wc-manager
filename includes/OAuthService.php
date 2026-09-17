@@ -57,6 +57,7 @@ class WcManagerOAuthService
             'upload_image' => ['media.write'],
             'attach_product_image' => ['store.write', 'media.write'],
             'upload_and_attach_product_image' => ['store.write', 'media.write'],
+            'generate_product_images' => ['media.write'],
             'search_articles' => ['articles.read'],
             'get_article' => ['articles.read'],
             'create_article' => ['articles.write'],
