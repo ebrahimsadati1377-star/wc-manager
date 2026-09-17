@@ -53,7 +53,8 @@ $response = $server->dispatch($decoded);
 $responseProtocol = $response['result']['protocolVersion'] ?? ($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? '2025-03-26');
 if (in_array($responseProtocol, WcManagerMcpServer::SUPPORTED_PROTOCOLS, true)) header('MCP-Protocol-Version: ' . $responseProtocol);
 if ($response === null) { http_response_code(202); exit; }
-if ($requestMethod === 'tools/list' && isset($response['result']['tools']) && is_array($response['result']['tools'])) {
+if (in_array($requestMethod, ['tools/list', 'server/discover'], true)
+    && isset($response['result']['tools']) && is_array($response['result']['tools'])) {
     $response['result']['tools'] = array_map('mcpApplySubmissionPolicy', $response['result']['tools']);
 }
 apiLogActivity('mcp_request', $requestMethod, isset($decoded['params']['name']) ? 'tool=' . (string)$decoded['params']['name'] : '');
