@@ -50,7 +50,8 @@ if ($requestMethod === 'tools/call') {
 }
 
 $response = $server->dispatch($decoded);
-$responseProtocol = $response['result']['protocolVersion'] ?? ($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? '2025-03-26');
+$responseResult = is_array($response['result'] ?? null) ? $response['result'] : [];
+$responseProtocol = $responseResult['protocolVersion'] ?? ($_SERVER['HTTP_MCP_PROTOCOL_VERSION'] ?? '2025-03-26');
 if (in_array($responseProtocol, WcManagerMcpServer::SUPPORTED_PROTOCOLS, true)) header('MCP-Protocol-Version: ' . $responseProtocol);
 if ($response === null) { http_response_code(202); exit; }
 if (in_array($requestMethod, ['tools/list', 'server/discover'], true)
