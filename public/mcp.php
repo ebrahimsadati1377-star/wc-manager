@@ -105,12 +105,36 @@ function mcpApplySubmissionPolicy(array $tool): array
     elseif ($name === 'get_sms_status') $scopes = ['store.read'];
     else $scopes = WcManagerOAuthService::toolScopes($name);
     $tool['securitySchemes'] = [['type'=>'oauth2','scopes'=>$scopes]];
-    $tool['outputSchema'] = ['type'=>'object','additionalProperties'=>true];
+    if (isset($tool['inputSchema']) && is_array($tool['inputSchema'])) {
+        $tool['inputSchema'] = mcpSanitizeSchemaForChatGPT($tool['inputSchema']);
+    }
+    unset($tool['outputSchema']);
     if (!isset($tool['annotations']) || !is_array($tool['annotations'])) $tool['annotations'] = [];
     $destructive = in_array($name, ['update_product','update_article','update_basalam_product','sync_basalam_product','send_sms'], true);
     $tool['annotations']['destructiveHint'] = $destructive;
     $tool['annotations']['openWorldHint'] = true;
     return $tool;
+}
+
+function mcpSanitizeSchemaForChatGPT(array $schema): array
+{
+    // Keep discovery schemas in the conservative JSON-Schema subset accepted by ChatGPT Actions.
+    foreach (['oneOf','anyOf','allOf','format','nullable','$ref','not','if','then','else','patternProperties','dependencies','dependentRequired','dependentSchemas','const','contains','prefixItems','unevaluatedProperties','minProperties','maxProperties'] as $keyword) {
+        unset($schema[$keyword]);
+    }
+    if (($schema['additionalProperties'] ?? null) === true) unset($schema['additionalProperties']);
+    foreach ($schema as $key => $value) {
+        if (is_array($value)) {
+            if ($key === 'required' || $key === 'enum') continue;
+            if (array_is_list($value)) {
+                foreach ($value as $i => $item) if (is_array($item)) $value[$i] = mcpSanitizeSchemaForChatGPT($item);
+                $schema[$key] = $value;
+            } else {
+                $schema[$key] = mcpSanitizeSchemaForChatGPT($value);
+            }
+        }
+    }
+    return $schema;
 }
 
 function mcpValidateModernHeaders(array $request): void
