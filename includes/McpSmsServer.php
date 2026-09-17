@@ -29,8 +29,8 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
                 'required'=>['product_name','product_reference_image','face_reference_image'],
                 'properties'=>[
                     'product_name'=>['type'=>'string','minLength'=>1],
-                    'product_reference_image'=>['description'=>'Garment reference image URL or ChatGPT-hydrated file object with download_url.','oneOf'=>[['type'=>'string','format'=>'uri'],['type'=>'object','additionalProperties'=>true]]],
-                    'face_reference_image'=>['description'=>'Face reference image URL or ChatGPT-hydrated file object with download_url.','oneOf'=>[['type'=>'string','format'=>'uri'],['type'=>'object','additionalProperties'=>true]]],
+                    'product_reference_image'=>['type'=>'string','format'=>'uri','description'=>'Public or temporary HTTPS URL for the authoritative garment reference image.'],
+                    'face_reference_image'=>['type'=>'string','format'=>'uri','description'=>'Public or temporary HTTPS URL for the model face reference image.'],
                     'count'=>['type'=>'integer','minimum'=>1,'maximum'=>10,'default'=>7],
                     'aspect_ratio'=>['type'=>'string','enum'=>['9:16','16:9','1:1'],'default'=>'9:16'],
                     'instructions'=>['type'=>'string','default'=>''],
