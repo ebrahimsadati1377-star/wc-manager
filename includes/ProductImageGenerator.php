@@ -19,8 +19,8 @@ class ProductImageGenerator
     {
         $productName = trim((string)($arguments['product_name'] ?? ''));
         if ($productName === '') throw new RuntimeException('product_name is required.');
-        $productReference = $this->referenceUrl($arguments['product_reference_image'] ?? null, 'product_reference_image');
-        $faceReference = $this->referenceUrl($arguments['face_reference_image'] ?? null, 'face_reference_image');
+        $productReference = $this->referenceUrl($this->referenceInput($arguments, 'product_reference'), 'product_reference_image');
+        $faceReference = $this->referenceUrl($this->referenceInput($arguments, 'face_reference'), 'face_reference_image');
         $count = isset($arguments['count']) ? (int)$arguments['count'] : 7;
         if ($count < 1 || $count > 10) throw new RuntimeException('count must be between 1 and 10.');
         $aspectRatio = trim((string)($arguments['aspect_ratio'] ?? '9:16')) ?: '9:16';
@@ -64,6 +64,19 @@ class ProductImageGenerator
         }
         apiLogActivity('mcp_generate_product_image', $productName, 'job=' . $index . '/' . $count . ' wordpress_upload=' . ($wordpressUpload ? 'true' : 'false'));
         return $result;
+    }
+
+    private function referenceInput(array $arguments, string $prefix)
+    {
+        $urlKey=$prefix . '_image'; $fileKey=$prefix . '_file'; $refsKey=$prefix . '_openaiFileIdRefs';
+        if (isset($arguments[$fileKey])) {
+            $file=$arguments[$fileKey];
+            if (is_array($file)) return ['download_url'=>$file['download_url'] ?? $file['download_link'] ?? '', 'url'=>$file['url'] ?? '', 'image_url'=>$file['image_url'] ?? ''];
+            if (is_string($file) && preg_match('#^https?://#i', trim($file))) return trim($file);
+        }
+        $refs=$arguments[$refsKey] ?? [];
+        if (is_array($refs) && isset($refs[0]) && is_array($refs[0])) return ['download_url'=>$refs[0]['download_link'] ?? $refs[0]['download_url'] ?? '', 'url'=>$refs[0]['url'] ?? '', 'image_url'=>$refs[0]['image_url'] ?? ''];
+        return $arguments[$urlKey] ?? null;
     }
 
     private function referenceUrl($value, string $field): string

@@ -26,11 +26,15 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
             'Generates count independent product-image jobs. For count=7 it executes exactly seven separate image-generation requests; every request produces one photo, one frame, one pose and one independent file. Collages, grids, multi-panel and multi-view outputs are forbidden. Optionally uploads every generated file separately to WordPress Media.',
             [
                 'type'=>'object',
-                'required'=>['product_name','product_reference_image','face_reference_image'],
+                'required'=>['product_name'],
                 'properties'=>[
                     'product_name'=>['type'=>'string'],
                     'product_reference_image'=>['type'=>'string','description'=>'HTTPS URL for the garment reference image.'],
-                    'face_reference_image'=>['type'=>'string','description'=>'HTTPS URL for the model face reference image.'],
+                    'product_reference_file'=>['type'=>'object','description'=>'Garment reference image attached in ChatGPT; secure download metadata is injected automatically.'],
+                    'product_reference_openaiFileIdRefs'=>['type'=>'array','items'=>['type'=>'object']],
+                    'face_reference_image'=>['type'=>'string','description'=>'HTTPS URL for the face reference image.'],
+                    'face_reference_file'=>['type'=>'object','description'=>'Face reference image attached in ChatGPT; secure download metadata is injected automatically.'],
+                    'face_reference_openaiFileIdRefs'=>['type'=>'array','items'=>['type'=>'object']],
                     'count'=>['type'=>'integer'],
                     'aspect_ratio'=>['type'=>'string','enum'=>['9:16','16:9','1:1']],
                     'instructions'=>['type'=>'string'],
@@ -62,7 +66,9 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
 
     private function extensionTool(string $name,string $title,string $description,array $inputSchema,bool $readOnly,bool $destructive,bool $idempotent): array
     {
-        return ['name'=>$name,'description'=>$description,'inputSchema'=>$inputSchema,'_meta'=>(object)[],'annotations'=>['title'=>$title,'readOnlyHint'=>$readOnly,'destructiveHint'=>$destructive,'idempotentHint'=>$idempotent,'openWorldHint'=>true]];
+        $fileParams=[];
+        foreach (['product_reference_file','face_reference_file'] as $fileParam) if (isset($inputSchema['properties'][$fileParam])) $fileParams[]=$fileParam;
+        return ['name'=>$name,'description'=>$description,'inputSchema'=>$inputSchema,'_meta'=>$fileParams ? ['openai/fileParams'=>$fileParams] : (object)[],'annotations'=>['title'=>$title,'readOnlyHint'=>$readOnly,'destructiveHint'=>$destructive,'idempotentHint'=>$idempotent,'openWorldHint'=>true]];
     }
 
     private function extensionResult(array $payload): array
