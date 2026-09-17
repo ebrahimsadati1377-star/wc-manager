@@ -119,23 +119,22 @@ function mcpApplySubmissionPolicy(array $tool): array
 
 function mcpSanitizeSchemaForChatGPT(array $schema): array
 {
-    // Keep discovery schemas in the conservative JSON-Schema subset accepted by ChatGPT Actions.
-    foreach (['oneOf','anyOf','allOf','format','nullable','$ref','not','if','then','else','patternProperties','dependencies','dependentRequired','dependentSchemas','const','contains','prefixItems','unevaluatedProperties','minProperties','maxProperties'] as $keyword) {
-        unset($schema[$keyword]);
-    }
-    if (($schema['additionalProperties'] ?? null) === true) unset($schema['additionalProperties']);
+    $allowed = ['type'=>true,'properties'=>true,'required'=>true,'description'=>true,'items'=>true];
+    $out = [];
     foreach ($schema as $key => $value) {
-        if (is_array($value)) {
-            if ($key === 'required' || $key === 'enum') continue;
-            if (array_is_list($value)) {
-                foreach ($value as $i => $item) if (is_array($item)) $value[$i] = mcpSanitizeSchemaForChatGPT($item);
-                $schema[$key] = $value;
-            } else {
-                $schema[$key] = mcpSanitizeSchemaForChatGPT($value);
-            }
+        if (!isset($allowed[$key])) continue;
+        if ($key === 'required') { if (is_array($value)) $out[$key] = array_values(array_filter($value, 'is_string')); continue; }
+        if ($key === 'properties' && is_array($value)) {
+            $props = [];
+            foreach ($value as $name => $propertySchema) if (is_array($propertySchema)) $props[$name] = mcpSanitizeSchemaForChatGPT($propertySchema);
+            $out[$key] = $props ?: (object)[]; continue;
         }
+        if ($key === 'items' && is_array($value)) { $out[$key] = mcpSanitizeSchemaForChatGPT($value); continue; }
+        if ($key === 'type' && is_string($value) && in_array($value, ['object','string','integer','number','boolean','array'], true)) { $out[$key] = $value; continue; }
+        if ($key === 'description' && is_string($value)) $out[$key] = $value;
     }
-    return $schema;
+    if (!isset($out['type']) && isset($schema['properties'])) $out['type'] = 'object';
+    return $out;
 }
 
 function mcpValidateModernHeaders(array $request): void
