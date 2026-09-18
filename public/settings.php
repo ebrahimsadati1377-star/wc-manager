@@ -13,10 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $wpUser     = trim($_POST['wp_username'] ?? '');
     $wpAppPass  = trim($_POST['wp_app_password'] ?? '');
     $siteTitle  = trim($_POST['site_title'] ?? '');
+    $arenaKey   = trim($_POST['arena_api_key'] ?? '');
+    $arenaModel = trim($_POST['arena_image_model'] ?? 'gpt-image-1.5');
 
     if ($ck === '') $ck = (string)getSetting('consumer_key');
     if ($cs === '') $cs = (string)getSetting('consumer_secret');
     if ($wpAppPass === '') $wpAppPass = (string)getSetting('wp_app_password');
+    if ($arenaKey === '') $arenaKey = (string)getSetting('arena_api_key', '');
+    if ($arenaModel === '') $arenaModel = (string)getSetting('arena_image_model', 'gpt-image-1.5');
 
     setSetting('store_url', $storeUrl);
     setSetting('consumer_key', $ck);
@@ -24,8 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     setSetting('wp_username', $wpUser);
     setSetting('wp_app_password', $wpAppPass);
     setSetting('site_title', $siteTitle ?: APP_NAME);
+    setSetting('arena_api_key', $arenaKey);
+    setSetting('arena_image_model', $arenaModel ?: 'gpt-image-1.5');
 
-    logActivity('update_settings', 'settings', 'به‌روزرسانی تنظیمات اتصال ووکامرس و وردپرس');
+    logActivity('update_settings', 'settings', 'به‌روزرسانی تنظیمات اتصال ووکامرس، وردپرس و Arena');
     setFlash('success', 'تنظیمات ذخیره شد.');
     redirect('settings.php');
 }
@@ -83,6 +89,20 @@ require __DIR__ . '/partials/header.php';
         </div>
       </section>
 
+      <section class="app-section-card">
+        <div class="app-section-card__head"><div><h2>Arena.ai</h2><p>کلید تولید تصویر برای ساخت ۷ تصویر مستقل محصول BAJI.</p></div><i class="fas fa-wand-magic-sparkles text-primary"></i></div>
+        <div class="app-section-card__body">
+          <div class="row g-3">
+            <div class="col-md-7"><label class="form-label">Arena API Key</label><input type="password" name="arena_api_key" id="arenaApiKey" class="form-control" dir="ltr" autocomplete="new-password" placeholder="برای حفظ کلید فعلی خالی بگذارید"><div class="form-text">کلید ذخیره‌شده هیچ‌وقت داخل HTML نمایش داده نمی‌شود.</div></div>
+            <div class="col-md-5"><label class="form-label">Image Model</label><input type="text" name="arena_image_model" class="form-control" dir="ltr" value="<?= e(getSetting('arena_image_model', 'gpt-image-1.5')) ?>"></div>
+          </div>
+          <div class="mt-3 d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-primary" id="testArenaBtn"><i class="fas fa-signal ms-1"></i>تست Arena</button>
+            <span id="testArenaResult" class="small"></span>
+          </div>
+        </div>
+      </section>
+
       <div class="settings-savebar">
         <button type="submit" class="btn btn-primary"><i class="fas fa-check ms-1"></i>ذخیره تنظیمات</button>
         <button type="button" class="btn btn-outline-secondary" id="testConnBtn"><i class="fas fa-signal ms-1"></i>تست اتصال</button>
@@ -105,6 +125,30 @@ require __DIR__ . '/partials/header.php';
 </form>
 
 <script>
+document.getElementById('testArenaBtn').addEventListener('click', function () {
+  const btn = this;
+  const resultEl = document.getElementById('testArenaResult');
+  const form = document.getElementById('settingsForm');
+  const fd = new FormData();
+  fd.append('csrf_token', form.querySelector('[name="csrf_token"]').value);
+  fd.append('arena_api_key', document.getElementById('arenaApiKey').value);
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm ms-1"></span>در حال بررسی';
+  resultEl.textContent = '';
+  fetch('ajax/arena_test.php', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      resultEl.textContent = data.message || (data.success ? 'Arena متصل است.' : 'اتصال Arena ناموفق بود.');
+      resultEl.className = data.success ? 'small text-success fw-semibold' : 'small text-danger fw-semibold';
+    })
+    .catch(() => {
+      resultEl.textContent = 'خطا در تست Arena';
+      resultEl.className = 'small text-danger fw-semibold';
+    })
+    .finally(() => { btn.disabled = false; btn.innerHTML = original; });
+});
+
 document.getElementById('testConnBtn').addEventListener('click', function () {
   const btn = this;
   const resultEl = document.getElementById('testConnResult');

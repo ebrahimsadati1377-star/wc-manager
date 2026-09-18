@@ -29,6 +29,7 @@ class ProductImageGenerator
         $instructions = trim((string)($arguments['instructions'] ?? ''));
         $wordpressUpload = (bool)($arguments['wordpress_upload'] ?? false);
         $arenaKey = trim((string)getenv('ARENA_API_KEY'));
+        if ($arenaKey === '') $arenaKey = trim((string)getSetting('arena_api_key', ''));
         $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
         $provider = $arenaKey !== '' ? 'arena' : 'openai';
         if ($arenaKey === '' && $openaiKey === '') {
@@ -116,7 +117,8 @@ STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split scree
         if ($instructions !== '') $prompt .= "Additional instructions: {$instructions}
 ";
         $size = $aspectRatio === '16:9' ? '1536x1024' : ($aspectRatio === '1:1' ? '1024x1024' : '1024x1536');
-        $model = trim((string)getenv('ARENA_IMAGE_MODEL')) ?: 'gpt-image-1.5';
+        $model = trim((string)getenv('ARENA_IMAGE_MODEL'));
+        if ($model === '') $model = trim((string)getSetting('arena_image_model', 'gpt-image-1.5')) ?: 'gpt-image-1.5';
 
         $productFile = $this->downloadReferenceImage($productReference, 'arena-product-reference');
         $faceFile = $faceReference === $productReference
