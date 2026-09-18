@@ -20,7 +20,8 @@ class ProductImageGenerator
         $productName = trim((string)($arguments['product_name'] ?? ''));
         if ($productName === '') throw new RuntimeException('product_name is required.');
         $productReference = $this->referenceUrl($this->referenceInput($arguments, 'product_reference'), 'product_reference_image');
-        $faceReference = $this->referenceUrl($this->referenceInput($arguments, 'face_reference'), 'face_reference_image');
+        $faceInput = $this->referenceInput($arguments, 'face_reference');
+        $faceReference = $faceInput ? $this->referenceUrl($faceInput, 'face_reference_image') : $productReference;
         $count = isset($arguments['count']) ? (int)$arguments['count'] : 7;
         if ($count < 1 || $count > 10) throw new RuntimeException('count must be between 1 and 10.');
         $aspectRatio = trim((string)($arguments['aspect_ratio'] ?? '9:16')) ?: '9:16';
@@ -36,6 +37,33 @@ class ProductImageGenerator
         }
         if (count($jobs) !== $count) throw new RuntimeException('Image generation did not return the requested number of independent files.');
         return ['success'=>true,'product_name'=>$productName,'count'=>$count,'aspect_ratio'=>$aspectRatio,'wordpress_upload'=>$wordpressUpload,'files'=>$jobs];
+    }
+
+    public function createProductWithImages(array $arguments): array
+    {
+        $name = trim((string)($arguments['product_name'] ?? ''));
+        if ($name === '') throw new RuntimeException('product_name is required.');
+        $price = trim((string)($arguments['price'] ?? ''));
+        if ($price === '' || !is_numeric($price) || (float)$price < 0) throw new RuntimeException('price must be a non-negative number.');
+        $status = trim((string)($arguments['status'] ?? 'publish')) ?: 'publish';
+        if (!in_array($status, ['draft','pending','publish'], true)) throw new RuntimeException('status must be draft, pending, or publish.');
+        $arguments['wordpress_upload'] = true;
+        $generated = $this->generate($arguments);
+        $images = [];
+        foreach ($generated['files'] as $job) {
+            $id = (int)($job['wordpress_media']['id'] ?? 0);
+            if ($id < 1) throw new RuntimeException('Generated WordPress media ID is missing.');
+            $images[] = ['id'=>$id];
+        }
+        $product = ['name'=>$name,'type'=>'simple','status'=>$status,'regular_price'=>$price,'images'=>$images];
+        foreach (['description','short_description','sku'] as $key) if (isset($arguments[$key]) && trim((string)$arguments[$key]) !== '') $product[$key]=(string)$arguments[$key];
+        if (isset($arguments['manage_stock'])) $product['manage_stock']=(bool)$arguments['manage_stock'];
+        if (isset($arguments['stock_quantity'])) $product['stock_quantity']=(int)$arguments['stock_quantity'];
+        $created = $this->wc->createProduct($product);
+        $code = (int)($created['status'] ?? 0);
+        if ($code < 200 || $code >= 300) throw new RuntimeException('WooCommerce product creation failed.');
+        apiLogActivity('mcp_create_product_with_ai_images', $name, 'count=' . count($images) . ' status=' . $status);
+        return ['success'=>true,'generated'=>$generated,'product'=>$created['data'] ?? $created];
     }
 
     private function runIndependentJob(string $apiKey, string $productName, string $productReference, string $faceReference, string $aspectRatio, string $instructions, bool $wordpressUpload, int $index, int $count): array
