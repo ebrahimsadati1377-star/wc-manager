@@ -1,5 +1,6 @@
 public/uploads/
 config/config.php
+config/ippanel-secret.php
 .env
 .env.*
 logs/

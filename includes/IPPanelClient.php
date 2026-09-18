@@ -59,18 +59,21 @@ class IPPanelClient
 
     private function normalizeIranMobile(string $mobile): string
     {
-        $mobile = preg_replace('/[^0-9+]/', '', trim($mobile));
-        if (str_starts_with($mobile, '+98')) {
-            $mobile = '0' . substr($mobile, 3);
-        } elseif (str_starts_with($mobile, '98') && strlen($mobile) === 12) {
-            $mobile = '0' . substr($mobile, 2);
+        $mobile = preg_replace('/\D+/', '', trim($mobile));
+
+        if (str_starts_with($mobile, '0098')) {
+            $mobile = substr($mobile, 2);
+        } elseif (strlen($mobile) === 11 && str_starts_with($mobile, '09')) {
+            $mobile = '98' . substr($mobile, 1);
         } elseif (strlen($mobile) === 10 && str_starts_with($mobile, '9')) {
-            $mobile = '0' . $mobile;
+            $mobile = '98' . $mobile;
         }
-        if (!preg_match('/^09\d{9}$/', $mobile)) {
+
+        if (!preg_match('/^989\d{9}$/', $mobile)) {
             throw new InvalidArgumentException('Recipient must be a valid Iranian mobile number.');
         }
-        return $mobile;
+
+        return '+' . $mobile;
     }
 
     private function request(string $method, string $path, array $payload): array
