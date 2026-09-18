@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Generates independent BAJI product images through OpenAI's Responses image tool.
+ * Generates independent BAJI product images through Arena API when configured, with OpenAI fallback.
  * Secrets are read only from server environment variables; nothing is persisted here.
  */
 class ProductImageGenerator
@@ -28,15 +28,21 @@ class ProductImageGenerator
         if (!in_array($aspectRatio, ['9:16', '16:9', '1:1'], true)) throw new RuntimeException('aspect_ratio must be 9:16, 16:9, or 1:1.');
         $instructions = trim((string)($arguments['instructions'] ?? ''));
         $wordpressUpload = (bool)($arguments['wordpress_upload'] ?? false);
-        $apiKey = trim((string)getenv('OPENAI_API_KEY'));
-        if ($apiKey === '') throw new RuntimeException('OPENAI_API_KEY is not configured on the server.');
+        $arenaKey = trim((string)getenv('ARENA_API_KEY'));
+        $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
+        $provider = $arenaKey !== '' ? 'arena' : 'openai';
+        if ($arenaKey === '' && $openaiKey === '') {
+            throw new RuntimeException('ARENA_API_KEY or OPENAI_API_KEY must be configured on the server.');
+        }
 
         $jobs = [];
         for ($index = 1; $index <= $count; $index++) {
-            $jobs[] = $this->runIndependentJob($apiKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count);
+            $jobs[] = $provider === 'arena'
+                ? $this->runArenaIndependentJob($arenaKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count)
+                : $this->runIndependentJob($openaiKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count);
         }
         if (count($jobs) !== $count) throw new RuntimeException('Image generation did not return the requested number of independent files.');
-        return ['success'=>true,'product_name'=>$productName,'count'=>$count,'aspect_ratio'=>$aspectRatio,'wordpress_upload'=>$wordpressUpload,'files'=>$jobs];
+        return ['success'=>true,'provider'=>$provider,'product_name'=>$productName,'count'=>$count,'aspect_ratio'=>$aspectRatio,'wordpress_upload'=>$wordpressUpload,'files'=>$jobs];
     }
 
     public function createProductWithImages(array $arguments): array
@@ -92,6 +98,143 @@ class ProductImageGenerator
         }
         apiLogActivity('mcp_generate_product_image', $productName, 'job=' . $index . '/' . $count . ' wordpress_upload=' . ($wordpressUpload ? 'true' : 'false'));
         return $result;
+    }
+
+    private function runArenaIndependentJob(string $apiKey, string $productName, string $productReference, string $faceReference, string $aspectRatio, string $instructions, bool $wordpressUpload, int $index, int $count): array
+    {
+        $poses = ['natural full-body front three-quarter standing pose','natural walking pose, full body','relaxed side three-quarter pose, full body','editorial standing pose with one hand relaxed, full body','natural seated or leaning fashion pose while keeping the garment fully visible','back three-quarter fashion pose with face naturally visible','confident straight-on full-body catalog pose','dynamic but realistic street-style full-body pose','minimal studio full-body pose with relaxed arms','natural turning pose, one single camera view'];
+        $pose = $poses[($index - 1) % count($poses)];
+        $prompt = "Create exactly ONE final product photograph for BAJI.
+Product: {$productName}.
+This is independent job {$index} of {$count}; output ONE image only, ONE frame only, ONE camera view only, ONE pose only.
+Pose for this job: {$pose}.
+Use image 1 as the authoritative garment reference and preserve it exactly: color, fabric appearance, silhouette/form, stitching, seams, pockets, collar, hood, buttons/zippers, trims, proportions, prints and every visible construction detail. Do not redesign the garment.
+Use image 2 as the face/identity reference and keep the same model identity and facial features.
+Compose for {$aspectRatio}. Photorealistic professional fashion photography, natural anatomy, realistic fabric texture, clean lighting.
+STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split screen, multiple panels, multiple views, before/after layout, duplicated person, or more than one photo in the output.
+";
+        if ($instructions !== '') $prompt .= "Additional instructions: {$instructions}
+";
+        $size = $aspectRatio === '16:9' ? '1536x1024' : ($aspectRatio === '1:1' ? '1024x1024' : '1024x1536');
+        $model = trim((string)getenv('ARENA_IMAGE_MODEL')) ?: 'gpt-image-1.5';
+
+        $productFile = $this->downloadReferenceImage($productReference, 'arena-product-reference');
+        $faceFile = $faceReference === $productReference
+            ? $productFile
+            : $this->downloadReferenceImage($faceReference, 'arena-face-reference');
+
+        try {
+            $response = $this->postArenaImageEdit($apiKey, $model, $prompt, $size, $productFile, $faceFile);
+        } finally {
+            @unlink($productFile);
+            if ($faceFile !== $productFile) @unlink($faceFile);
+        }
+
+        $base64 = $this->extractArenaImageBase64($response);
+        if ($aspectRatio !== '1:1') $base64 = $this->cropToExactAspect($base64, $aspectRatio);
+        $slug = preg_replace('/[^A-Za-z0-9_-]+/', '-', $productName);
+        $slug = trim((string)$slug, '-_') ?: 'baji-product';
+        $imported = $this->images->import(['filename'=>$slug . '-image-' . $index . '.png','base64'=>$base64]);
+        $public = $imported; unset($public['local_path']);
+        $result = ['job'=>$index,'provider'=>'arena','model'=>$model,'file'=>$public];
+        if ($wordpressUpload) {
+            $media = $this->wc->uploadMedia($imported['local_path'], $imported['filename']);
+            $status = (int)($media['status'] ?? 0);
+            if ($status < 200 || $status >= 300 || !is_array($media['data'] ?? null)) {
+                throw new RuntimeException('WordPress Media upload failed for Arena independent job ' . $index . '.');
+            }
+            $result['wordpress_media'] = $media['data'];
+        }
+        apiLogActivity('mcp_generate_product_image', $productName, 'provider=arena model=' . $model . ' job=' . $index . '/' . $count . ' wordpress_upload=' . ($wordpressUpload ? 'true' : 'false'));
+        return $result;
+    }
+
+    private function downloadReferenceImage(string $url, string $label): string
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'baji_arena_');
+        if ($tmp === false) throw new RuntimeException('Could not create a temporary file for ' . $label . '.');
+        $fh = fopen($tmp, 'wb');
+        if ($fh === false) {
+            @unlink($tmp);
+            throw new RuntimeException('Could not open a temporary file for ' . $label . '.');
+        }
+        $ch = curl_init($url);
+        if ($ch === false) {
+            fclose($fh); @unlink($tmp);
+            throw new RuntimeException('Could not initialize reference image download.');
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_FILE=>$fh, CURLOPT_FOLLOWLOCATION=>true, CURLOPT_MAXREDIRS=>5,
+            CURLOPT_CONNECTTIMEOUT=>15, CURLOPT_TIMEOUT=>60, CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS | CURLPROTO_HTTP,
+            CURLOPT_USERAGENT=>'BAJI-WC-Manager/ArenaImageReference'
+        ]);
+        $ok = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $type = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        fclose($fh);
+        $size = is_file($tmp) ? (int)filesize($tmp) : 0;
+        if ($ok === false || $status < 200 || $status >= 300 || $size < 1 || $size > 25 * 1024 * 1024) {
+            @unlink($tmp);
+            throw new RuntimeException('Could not download ' . $label . ': ' . ($error ?: ('HTTP ' . $status)));
+        }
+        if ($type !== '' && stripos($type, 'image/') !== 0) {
+            @unlink($tmp);
+            throw new RuntimeException($label . ' did not resolve to an image.');
+        }
+        return $tmp;
+    }
+
+    private function postArenaImageEdit(string $apiKey, string $model, string $prompt, string $size, string $productFile, string $faceFile): array
+    {
+        $fields = [
+            'model' => $model,
+            'prompt' => $prompt,
+            'size' => $size,
+            'response_format' => 'b64_json',
+            'image[0]' => new CURLFile($productFile, 'image/png', 'product-reference.png'),
+            'image[1]' => new CURLFile($faceFile, 'image/png', 'face-reference.png'),
+        ];
+        $ch = curl_init('https://api.preview.arena.ai/v1/images/edits');
+        if ($ch === false) throw new RuntimeException('Could not initialize Arena image request.');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER=>true,
+            CURLOPT_POST=>true,
+            CURLOPT_POSTFIELDS=>$fields,
+            CURLOPT_CONNECTTIMEOUT=>15,
+            CURLOPT_TIMEOUT=>240,
+            CURLOPT_HTTPHEADER=>[
+                'Accept: application/json',
+                'Authorization: Bearer ' . $apiKey,
+            ],
+            CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,
+            CURLOPT_USERAGENT=>'BAJI-WC-Manager/ArenaProductImageGenerator'
+        ]);
+        $raw = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        if ($raw === false) throw new RuntimeException('Arena image request failed: ' . ($error ?: 'network error'));
+        $decoded = json_decode((string)$raw, true);
+        if (!is_array($decoded)) throw new RuntimeException('Arena returned invalid JSON.');
+        if ($status < 200 || $status >= 300) {
+            throw new RuntimeException('Arena image generation failed: ' . (string)($decoded['error']['message'] ?? ('HTTP ' . $status)));
+        }
+        return $decoded;
+    }
+
+    private function extractArenaImageBase64(array $response): string
+    {
+        $item = is_array($response['data'][0] ?? null) ? $response['data'][0] : [];
+        $base64 = trim((string)($item['b64_json'] ?? $item['base64'] ?? ''));
+        if ($base64 !== '') return $base64;
+        $url = trim((string)($item['url'] ?? ''));
+        if ($url !== '' && preg_match('#^https?://#i', $url)) {
+            $binary = @file_get_contents($url);
+            if (is_string($binary) && $binary !== '') return base64_encode($binary);
+        }
+        throw new RuntimeException('Arena response did not contain image data.');
     }
 
     private function referenceInput(array $arguments, string $prefix)
