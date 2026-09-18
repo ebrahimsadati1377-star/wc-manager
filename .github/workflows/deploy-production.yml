@@ -139,6 +139,7 @@ jobs:
             --exclude='.github/' \
             --exclude='.deploy-backups/' \
             --exclude='config/config.php' \
+            --exclude='config/ippanel-secret.php' \
             --exclude='public/uploads/' \
             --exclude='public/uploads/***' \
             -e "ssh -p $PORT -o BatchMode=yes -o StrictHostKeyChecking=yes" \
