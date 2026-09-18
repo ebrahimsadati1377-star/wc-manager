@@ -49,6 +49,7 @@ class WcManagerOAuthService
     {
         $map = [
             'check_connection' => ['store.read', 'basalam.read'],
+            'get_site_stats' => ['articles.write'],
             'search_products' => ['store.read'],
             'get_product' => ['store.read'],
             'create_product' => ['store.write'],

@@ -123,6 +123,15 @@ class WcManagerMcpServer
                 true
             ),
             $this->tool(
+                'get_site_stats',
+                'Get BAJI site traffic statistics',
+                'Reads current WP Statistics traffic counts from bajistyle.ir. Uses a temporary draft only to render WP Statistics shortcodes, then deletes it immediately. Returns today, trailing 7 days, trailing 30 days, all-time totals, current online visitors, and 30-day search-engine visits.',
+                ['type' => 'object', 'properties' => (object)[], 'additionalProperties' => false],
+                false,
+                false,
+                true
+            ),
+            $this->tool(
                 'search_products',
                 'Search WooCommerce products',
                 'Search and filter WooCommerce products. Returns IDs, names and full WooCommerce product payloads.',
@@ -418,6 +427,9 @@ class WcManagerMcpServer
 
                 case 'check_ai_crawlers':
                     return $this->toolSuccess($this->checkAiCrawlers());
+
+                case 'get_site_stats':
+                    return $this->toolSuccess($this->getSiteStats());
 
                 case 'search_products':
                     $params = [];
@@ -904,6 +916,78 @@ class WcManagerMcpServer
             'properties' => $properties,
             'additionalProperties' => false,
         ];
+    }
+
+    private function getSiteStats(): array
+    {
+        if (!$this->wc->isWpConfigured()) {
+            throw new McpToolException('WordPress connection is not configured.');
+        }
+
+        $shortcodes = [
+            'visits_today' => '[wpstatistics stat=visits time=today format=english]',
+            'visitors_today' => '[wpstatistics stat=visitors time=today format=english]',
+            'visits_7d' => '[wpstatistics stat=visits time=week format=english]',
+            'visitors_7d' => '[wpstatistics stat=visitors time=week format=english]',
+            'visits_30d' => '[wpstatistics stat=visits time=month format=english]',
+            'visitors_30d' => '[wpstatistics stat=visitors time=month format=english]',
+            'visits_total' => '[wpstatistics stat=visits time=total format=english]',
+            'visitors_total' => '[wpstatistics stat=visitors time=total format=english]',
+            'online' => '[wpstatistics stat=usersonline format=english]',
+            'searches_30d' => '[wpstatistics stat=searches time=month provider=all format=english]',
+        ];
+        $lines = [];
+        foreach ($shortcodes as $key => $shortcode) {
+            $lines[] = $key . '=' . $shortcode;
+        }
+
+        $create = $this->wc->post('wp-json/wp/v2/posts', [
+            'title' => '__baji_stats_probe_' . gmdate('Ymd_His'),
+            'content' => implode("\n", $lines),
+            'status' => 'draft',
+        ]);
+        $postId = (int)($create['body']['id'] ?? 0);
+        $createStatus = (int)($create['status'] ?? 0);
+        if ($postId < 1 || $createStatus < 200 || $createStatus >= 300) {
+            throw new McpToolException('Could not create temporary statistics probe.');
+        }
+
+        try {
+            $read = $this->wc->get('wp-json/wp/v2/posts/' . $postId, ['context' => 'edit']);
+            $readStatus = (int)($read['status'] ?? 0);
+            if ($readStatus < 200 || $readStatus >= 300) {
+                throw new McpToolException('Could not render WP Statistics values.');
+            }
+
+            $rendered = (string)($read['body']['content']['rendered'] ?? '');
+            $rendered = str_ireplace(['<br />', '<br/>', '<br>'], "\n", $rendered);
+            $plain = html_entity_decode(strip_tags($rendered), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $values = [];
+            foreach (array_keys($shortcodes) as $key) {
+                $pattern = '/(?:^|\n)\s*' . preg_quote($key, '/') . '\s*=\s*([0-9][0-9,]*)/m';
+                $values[$key] = preg_match($pattern, $plain, $match)
+                    ? (int)str_replace(',', '', $match[1])
+                    : null;
+            }
+            if ($values['visits_today'] === null || $values['visitors_today'] === null) {
+                throw new McpToolException('WP Statistics shortcodes did not return readable values.');
+            }
+
+            return [
+                'source' => 'WP Statistics',
+                'generated_at' => gmdate('c'),
+                'periods' => [
+                    'today' => ['views' => $values['visits_today'], 'visitors' => $values['visitors_today']],
+                    'last_7_days' => ['views' => $values['visits_7d'], 'visitors' => $values['visitors_7d']],
+                    'last_30_days' => ['views' => $values['visits_30d'], 'visitors' => $values['visitors_30d'], 'search_engine_visits' => $values['searches_30d']],
+                    'all_time' => ['views' => $values['visits_total'], 'visitors' => $values['visitors_total']],
+                ],
+                'online_visitors' => $values['online'],
+                'period_note' => 'last_7_days and last_30_days are trailing periods from WP Statistics.',
+            ];
+        } finally {
+            $this->wc->delete('wp-json/wp/v2/posts/' . $postId, ['force' => true]);
+        }
     }
 
     private function idSchema(string $key): array
