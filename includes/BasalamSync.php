@@ -275,6 +275,28 @@ class BasalamSync
 
         if ($creating) {
             $basalamRes = $this->basalam->createProduct($payload);
+
+            // Basalam requires product names to be unique. WooCommerce can have
+            // separate products with the same display name but distinct SKUs.
+            // Keep the Woo title unchanged and disambiguate only the Basalam
+            // listing when the API explicitly rejects a duplicate name.
+            if (
+                $basalamRes['error']
+                && isset($payload['sku'])
+                && trim((string)$payload['sku']) !== ''
+                && str_contains((string)$basalamRes['error'], 'name')
+                && (str_contains((string)$basalamRes['error'], 'تکراری') || str_contains((string)$basalamRes['error'], 'قبلا'))
+            ) {
+                $retryPayload = $payload;
+                $retryPayload['name'] = $this->limitText(
+                    trim((string)$payload['name']) . ' - کد ' . trim((string)$payload['sku']),
+                    255
+                );
+                $basalamRes = $this->basalam->createProduct($retryPayload);
+                if (!$basalamRes['error']) {
+                    $warnings[] = 'نام محصول در باسلام برای جلوگیری از تکرار با کد SKU متمایز شد.';
+                }
+            }
         } else {
             $basalamProductId = (int)$map['basalam_product_id'];
             $parentPayload = $payload;
@@ -563,11 +585,29 @@ class BasalamSync
                 continue;
             }
 
-            $upload = $safeCropTopPercent > 0
-                ? BasalamSafeImageProcessor::upload($this->basalam, $url, $safeCropTopPercent)
-                : BasalamImageProcessor::upload($this->basalam, $url);
-            if ($upload['error']) {
-                $warnings[] = 'آپلود یک تصویر ناموفق بود: ' . $upload['error'];
+            $upload = null;
+            for ($attempt = 0; $attempt < 3; $attempt++) {
+                $upload = $safeCropTopPercent > 0
+                    ? BasalamSafeImageProcessor::upload($this->basalam, $url, $safeCropTopPercent)
+                    : BasalamImageProcessor::upload($this->basalam, $url);
+
+                if (!$upload['error']) {
+                    break;
+                }
+
+                $errorText = (string)$upload['error'];
+                $isRateLimited = str_contains($errorText, 'Too Many Requests')
+                    || str_contains($errorText, 'HTTP 429')
+                    || str_contains($errorText, '429');
+                if (!$isRateLimited || $attempt >= 2) {
+                    break;
+                }
+
+                sleep(2 * ($attempt + 1));
+            }
+
+            if (!is_array($upload) || $upload['error']) {
+                $warnings[] = 'آپلود یک تصویر ناموفق بود: ' . (string)($upload['error'] ?? 'خطای نامشخص');
                 continue;
             }
 
