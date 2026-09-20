@@ -104,6 +104,7 @@
   // ---------------------------------------------------------------
   const aiBuildBtn = document.getElementById('aiBuildProductBtn');
   const aiRawInput = document.getElementById('aiRawProductImage');
+  const aiFaceInput = document.getElementById('aiFaceReferenceImage');
   const aiStatus = document.getElementById('aiBuildStatus');
 
   async function aiJson(url, payload) {
@@ -115,6 +116,15 @@
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.message || 'خطای پردازش هوشمند');
     return data;
+  }
+
+  async function aiJsonWithRetry(url, payload, attempts = 2) {
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try { return await aiJson(url, payload); }
+      catch (e) { lastError = e; if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, 1200)); }
+    }
+    throw lastError;
   }
 
   async function uploadRawProductImage(file) {
@@ -137,45 +147,69 @@
     if (Array.isArray(a.category_ids) && a.category_ids.length) {
       document.querySelectorAll('.cat-checkbox').forEach(cb => { cb.checked = a.category_ids.includes(parseInt(cb.value, 10)); });
     }
+    document.getElementById('attributesWrap').innerHTML = '';
     if (Array.isArray(attrs)) attrs.forEach(attr => addAttributeRow(attr));
   }
 
   if (aiBuildBtn) aiBuildBtn.addEventListener('click', async function () {
     const file = aiRawInput.files[0];
     if (!file) { alert('اول عکس خام محصول را انتخاب کنید.'); return; }
+    if (!document.getElementById('type_simple').checked) {
+      alert('انتشار هوشمند فعلاً برای محصول ساده تنظیم شده است.');
+      return;
+    }
+    if (!document.getElementById('f_regular_price').value.trim()) {
+      alert('قبل از شروع، قیمت اصلی محصول را وارد کنید.');
+      return;
+    }
+
     aiBuildBtn.disabled = true;
+    aiStatus.className = 'small mt-2 text-muted';
     try {
-      aiStatus.textContent = '۱/۳ — در حال آپلود و تحلیل عکس خام...';
+      aiStatus.textContent = '۱/۳ — در حال آپلود عکس خام و تحلیل SEO...';
       const rawUrl = await uploadRawProductImage(file);
+      const faceFile = aiFaceInput && aiFaceInput.files ? aiFaceInput.files[0] : null;
+      const faceUrl = faceFile ? await uploadRawProductImage(faceFile) : '';
+
       const analyzed = await aiJson('ajax/product_ai_analyze.php', {
         image_url: rawUrl,
+        face_reference_url: faceUrl,
         name: document.getElementById('f_name').value.trim(),
         short_description: document.getElementById('f_short_description').value,
         description: document.getElementById('f_description').value,
         notes: document.getElementById('aiProductNotes').value,
         category_ids: collectCategories().map(c => c.id)
       });
+
       applyAiAnalysis(analyzed.analysis, analyzed.attributes);
       images = [];
       renderGallery();
+
       for (let i = 1; i <= 7; i++) {
-        aiStatus.textContent = '۲/۳ — در حال ساخت عکس حرفه‌ای ' + i + ' از ۷...';
-        const made = await aiJson('ajax/product_ai_image.php', {
+        aiStatus.textContent = '۲/۳ — ساخت تصویر حرفه‌ای ' + i + ' از ۷ و ثبت در وردپرس...';
+        const made = await aiJsonWithRetry('ajax/product_ai_image.php', {
           image_url: rawUrl,
+          face_reference_url: faceUrl,
           product_name: analyzed.analysis.name,
+          focus_keyword: analyzed.analysis.focus_keyword,
           index: i,
-          instructions: 'BAJI ecommerce product photo. Keep garment exact; clean varied professional background and pose; no text or collage.'
-        });
-        if (!made.image.id || !made.image.src) throw new Error('عکس ' + i + ' در وردپرس ذخیره نشد.');
+          instructions: 'BAJI ecommerce product photo. Preserve garment color, fabric, seams, pockets, buttons, hood, print and proportions exactly. Use varied realistic fashion poses/backgrounds. One photo only; no text, logo overlay, collage, grid or multi-view.'
+        }, 2);
+
+        if (!made.image || !made.image.id || !made.image.src) {
+          throw new Error('عکس ' + i + ' در وردپرس ذخیره نشد.');
+        }
         images.push(made.image);
         renderGallery();
       }
-      aiStatus.textContent = '۳/۳ — تصاویر و سئو آماده شد؛ در حال انتشار محصول...';
+
+      if (images.length !== 7) throw new Error('تعداد تصاویر نهایی دقیقاً ۷ عدد نشد.');
+      aiStatus.textContent = '۳/۳ — ۷ تصویر و SEO آماده شد؛ محصول در حال انتشار است...';
       aiStatus.className = 'small mt-2 text-success';
       document.getElementById('f_status').value = 'publish';
       document.getElementById('productForm').requestSubmit();
     } catch (e) {
-      aiStatus.textContent = 'خطا: ' + e.message;
+      aiStatus.textContent = 'خطا: ' + e.message + ' — محصول منتشر نشد.';
       aiStatus.className = 'small mt-2 text-danger';
     } finally {
       aiBuildBtn.disabled = false;

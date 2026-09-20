@@ -6,6 +6,8 @@ function wcAgentOpenAiKeyFromSession(): string
     if (is_string($env) && trim($env) !== '') {
         return trim($env);
     }
+    $stored = trim((string)getSetting('openai_api_key', ''));
+    if ($stored !== '') return $stored;
     return trim((string)($_SESSION['wc_agent_openai_key'] ?? ''));
 }
 

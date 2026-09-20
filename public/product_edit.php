@@ -317,10 +317,14 @@ require __DIR__ . '/partials/header.php';
         <div class="card-body">
           <div class="border rounded p-3 mb-3 bg-light">
             <label class="form-label fw-bold">ساخت هوشمند محصول BAJI</label>
-            <input type="file" id="aiRawProductImage" accept="image/*" class="form-control form-control-sm mb-2">
-            <textarea id="aiProductNotes" class="form-control form-control-sm mb-2" rows="2" placeholder="اطلاعات قطعی مثل جنس، سایز، رنگ و قد را بنویسید (اختیاری)"></textarea>
-            <button type="button" class="btn btn-dark w-100" id="aiBuildProductBtn">✨ ساخت ۷ عکس + سئو محصول</button>
-            <div id="aiBuildStatus" class="small mt-2 text-muted"></div>
+            <label class="form-label small mb-1">عکس خام محصول</label>
+            <input type="file" id="aiRawProductImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-2">
+            <label class="form-label small mb-1">چهره مرجع BAJI</label>
+            <input type="file" id="aiFaceReferenceImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-1">
+            <div class="form-text mb-2"><?= $hasBajiFaceReference ? 'چهره مرجع ذخیره شده است؛ فقط برای تغییر آن فایل جدید انتخاب کن.' : 'یک بار چهره مرجع BAJI را انتخاب کن؛ برای دفعات بعد ذخیره می‌شود.' ?></div>
+            <textarea id="aiProductNotes" class="form-control form-control-sm mb-2" rows="3" placeholder="اطلاعات قطعی مثل جنس، سایز، رنگ، قد و نکات شستشو را بنویس (اختیاری)"></textarea>
+            <button type="button" class="btn btn-dark w-100" id="aiBuildProductBtn">✨ ساخت ۷ عکس + سئو + انتشار</button>
+            <div id="aiBuildStatus" class="small mt-2 text-muted">آماده دریافت عکس خام.</div>
           </div>
           <input type="hidden" id="f_seo_title">
           <input type="hidden" id="f_meta_description">

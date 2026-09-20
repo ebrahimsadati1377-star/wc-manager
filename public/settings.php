@@ -13,12 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $wpUser     = trim($_POST['wp_username'] ?? '');
     $wpAppPass  = trim($_POST['wp_app_password'] ?? '');
     $siteTitle  = trim($_POST['site_title'] ?? '');
+    $openaiKey  = trim($_POST['openai_api_key'] ?? '');
     $arenaKey   = trim($_POST['arena_api_key'] ?? '');
     $arenaModel = trim($_POST['arena_image_model'] ?? 'gpt-image-1.5');
 
     if ($ck === '') $ck = (string)getSetting('consumer_key');
     if ($cs === '') $cs = (string)getSetting('consumer_secret');
     if ($wpAppPass === '') $wpAppPass = (string)getSetting('wp_app_password');
+    if ($openaiKey === '') $openaiKey = (string)getSetting('openai_api_key', '');
     if ($arenaKey === '') $arenaKey = (string)getSetting('arena_api_key', '');
     if ($arenaModel === '') $arenaModel = (string)getSetting('arena_image_model', 'gpt-image-1.5');
 
@@ -28,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     setSetting('wp_username', $wpUser);
     setSetting('wp_app_password', $wpAppPass);
     setSetting('site_title', $siteTitle ?: APP_NAME);
+    setSetting('openai_api_key', $openaiKey);
     setSetting('arena_api_key', $arenaKey);
     setSetting('arena_image_model', $arenaModel ?: 'gpt-image-1.5');
 
@@ -86,6 +89,15 @@ require __DIR__ . '/partials/header.php';
             <div class="col-md-6"><label class="form-label">نام کاربری وردپرس</label><input type="text" name="wp_username" class="form-control" dir="ltr" autocomplete="username" placeholder="admin" value="<?= e(getSetting('wp_username')) ?>"></div>
             <div class="col-md-6"><label class="form-label">Application Password</label><input type="password" name="wp_app_password" class="form-control" dir="ltr" autocomplete="new-password" placeholder="برای حفظ رمز فعلی خالی بگذارید"><div class="form-text">رمز فعلی از سرور به مرورگر برگردانده نمی‌شود.</div></div>
           </div>
+        </div>
+      </section>
+
+      <section class="app-section-card">
+        <div class="app-section-card__head"><div><h2>OpenAI</h2><p>برای تحلیل عکس خام، تولید متن SEO و مسیر جایگزین ساخت تصویر.</p></div><i class="fas fa-brain text-primary"></i></div>
+        <div class="app-section-card__body">
+          <label class="form-label">OpenAI API Key</label>
+          <input type="password" name="openai_api_key" class="form-control" dir="ltr" autocomplete="new-password" placeholder="برای حفظ کلید فعلی خالی بگذارید">
+          <div class="form-text">کلید ذخیره‌شده هیچ‌وقت داخل HTML نمایش داده نمی‌شود. برای Workflow هوشمند محصول، این کلید برای تحلیل و SEO لازم است.</div>
         </div>
       </section>
 

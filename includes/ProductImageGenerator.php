@@ -35,6 +35,7 @@ class ProductImageGenerator
         $arenaKey = trim((string)getenv('ARENA_API_KEY'));
         if ($arenaKey === '') $arenaKey = trim((string)getSetting('arena_api_key', ''));
         $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
+        if ($openaiKey === '') $openaiKey = trim((string)getSetting('openai_api_key', ''));
         if ($openaiKey === '' && function_exists('wcAgentOpenAiKeyFromSession')) $openaiKey = wcAgentOpenAiKeyFromSession();
         $provider = $arenaKey !== '' ? 'arena' : 'openai';
         if ($arenaKey === '' && $openaiKey === '') {
@@ -74,6 +75,7 @@ class ProductImageGenerator
         $arenaKey = trim((string)getenv('ARENA_API_KEY'));
         if ($arenaKey === '') $arenaKey = trim((string)getSetting('arena_api_key', ''));
         $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
+        if ($openaiKey === '') $openaiKey = trim((string)getSetting('openai_api_key', ''));
         if ($openaiKey === '' && function_exists('wcAgentOpenAiKeyFromSession')) $openaiKey = wcAgentOpenAiKeyFromSession();
         if ($arenaKey === '' && $openaiKey === '') {
             throw new RuntimeException('ARENA_API_KEY or OPENAI_API_KEY must be configured on the server.');

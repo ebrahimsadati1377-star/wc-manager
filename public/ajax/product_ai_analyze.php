@@ -8,6 +8,14 @@ requirePostAndCsrfOrFail();
 $data = json_decode(file_get_contents('php://input'), true);
 if (!is_array($data)) jsonResponse(['success'=>false,'message'=>'داده نامعتبر است.'], 422);
 
+$faceReferenceUrl = trim((string)($data['face_reference_url'] ?? ''));
+if ($faceReferenceUrl !== '') {
+    if (!preg_match('#^https?://#i', $faceReferenceUrl)) {
+        jsonResponse(['success'=>false,'message'=>'آدرس چهره مرجع معتبر نیست.'], 422);
+    }
+    setSetting('baji_face_reference_url', $faceReferenceUrl);
+}
+
 try {
     $service = new ProductAiSeoService();
     $analysis = $service->analyze((string)($data['image_url'] ?? ''), [
