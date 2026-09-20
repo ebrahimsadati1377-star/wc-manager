@@ -111,7 +111,7 @@ $payload = [
 
 // Only metadata explicitly supported by this panel may be written. Arbitrary
 // meta keys from the browser are intentionally ignored.
-$allowedMetaKeys = ['_bajistyle_product_video_id'];
+$allowedMetaKeys = ['_bajistyle_product_video_id','_yoast_wpseo_title','_yoast_wpseo_metadesc','_yoast_wpseo_focuskw','rank_math_title','rank_math_description','rank_math_focus_keyword'];
 $metaData = [];
 foreach ((array)($data['meta_data'] ?? []) as $meta) {
     if (!is_array($meta)) {
@@ -125,6 +125,9 @@ foreach ((array)($data['meta_data'] ?? []) as $meta) {
     if ($key === '_bajistyle_product_video_id') {
         $videoId = (int)($meta['value'] ?? 0);
         $metaData[] = ['key' => $key, 'value' => $videoId > 0 ? $videoId : ''];
+    } else {
+        $value = trim((string)($meta['value'] ?? ''));
+        if ($value !== '') $metaData[] = ['key' => $key, 'value' => $value];
     }
 }
 if ($metaData) {

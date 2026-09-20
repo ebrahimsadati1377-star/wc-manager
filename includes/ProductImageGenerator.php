@@ -21,6 +21,10 @@ class ProductImageGenerator
         if ($productName === '') throw new RuntimeException('product_name is required.');
         $productReference = $this->referenceUrl($this->referenceInput($arguments, 'product_reference'), 'product_reference_image');
         $faceInput = $this->referenceInput($arguments, 'face_reference');
+        if (!$faceInput) {
+            $storedFaceReference = trim((string)getSetting('baji_face_reference_url', ''));
+            if ($storedFaceReference !== '') $faceInput = $storedFaceReference;
+        }
         $faceReference = $faceInput ? $this->referenceUrl($faceInput, 'face_reference_image') : $productReference;
         $count = isset($arguments['count']) ? (int)$arguments['count'] : 7;
         if ($count < 1 || $count > 10) throw new RuntimeException('count must be between 1 and 10.');
@@ -31,6 +35,7 @@ class ProductImageGenerator
         $arenaKey = trim((string)getenv('ARENA_API_KEY'));
         if ($arenaKey === '') $arenaKey = trim((string)getSetting('arena_api_key', ''));
         $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
+        if ($openaiKey === '' && function_exists('wcAgentOpenAiKeyFromSession')) $openaiKey = wcAgentOpenAiKeyFromSession();
         $provider = $arenaKey !== '' ? 'arena' : 'openai';
         if ($arenaKey === '' && $openaiKey === '') {
             throw new RuntimeException('ARENA_API_KEY or OPENAI_API_KEY must be configured on the server.');
@@ -44,6 +49,42 @@ class ProductImageGenerator
         }
         if (count($jobs) !== $count) throw new RuntimeException('Image generation did not return the requested number of independent files.');
         return ['success'=>true,'provider'=>$provider,'product_name'=>$productName,'count'=>$count,'aspect_ratio'=>$aspectRatio,'wordpress_upload'=>$wordpressUpload,'files'=>$jobs];
+    }
+
+    public function generateSingle(array $arguments, int $index, int $count = 7): array
+    {
+        $productName = trim((string)($arguments['product_name'] ?? ''));
+        if ($productName === '') throw new RuntimeException('product_name is required.');
+        if ($index < 1 || $index > 10 || $count < 1 || $count > 10 || $index > $count) {
+            throw new RuntimeException('Invalid image job index/count.');
+        }
+
+        $productReference = $this->referenceUrl($this->referenceInput($arguments, 'product_reference'), 'product_reference_image');
+        $faceInput = $this->referenceInput($arguments, 'face_reference');
+        if (!$faceInput) {
+            $storedFaceReference = trim((string)getSetting('baji_face_reference_url', ''));
+            if ($storedFaceReference !== '') $faceInput = $storedFaceReference;
+        }
+        $faceReference = $faceInput ? $this->referenceUrl($faceInput, 'face_reference_image') : $productReference;
+        $aspectRatio = trim((string)($arguments['aspect_ratio'] ?? '9:16')) ?: '9:16';
+        if (!in_array($aspectRatio, ['9:16', '16:9', '1:1'], true)) throw new RuntimeException('Invalid aspect ratio.');
+        $instructions = trim((string)($arguments['instructions'] ?? ''));
+        $wordpressUpload = (bool)($arguments['wordpress_upload'] ?? false);
+
+        $arenaKey = trim((string)getenv('ARENA_API_KEY'));
+        if ($arenaKey === '') $arenaKey = trim((string)getSetting('arena_api_key', ''));
+        $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
+        if ($openaiKey === '' && function_exists('wcAgentOpenAiKeyFromSession')) $openaiKey = wcAgentOpenAiKeyFromSession();
+        if ($arenaKey === '' && $openaiKey === '') {
+            throw new RuntimeException('ARENA_API_KEY or OPENAI_API_KEY must be configured on the server.');
+        }
+
+        $provider = $arenaKey !== '' ? 'arena' : 'openai';
+        $job = $provider === 'arena'
+            ? $this->runArenaIndependentJob($arenaKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count)
+            : $this->runIndependentJob($openaiKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count);
+
+        return ['success'=>true, 'provider'=>$provider, 'job'=>$job];
     }
 
     public function createProductWithImages(array $arguments): array

@@ -315,6 +315,16 @@ require __DIR__ . '/partials/header.php';
       <div class="card product-edit-card mb-4">
         <div class="card-header fw-bold">تصاویر محصول</div>
         <div class="card-body">
+          <div class="border rounded p-3 mb-3 bg-light">
+            <label class="form-label fw-bold">ساخت هوشمند محصول BAJI</label>
+            <input type="file" id="aiRawProductImage" accept="image/*" class="form-control form-control-sm mb-2">
+            <textarea id="aiProductNotes" class="form-control form-control-sm mb-2" rows="2" placeholder="اطلاعات قطعی مثل جنس، سایز، رنگ و قد را بنویسید (اختیاری)"></textarea>
+            <button type="button" class="btn btn-dark w-100" id="aiBuildProductBtn">✨ ساخت ۷ عکس + سئو محصول</button>
+            <div id="aiBuildStatus" class="small mt-2 text-muted"></div>
+          </div>
+          <input type="hidden" id="f_seo_title">
+          <input type="hidden" id="f_meta_description">
+          <input type="hidden" id="f_focus_keyword">
           <div class="gallery-wrap" id="galleryWrap"></div>
           <input type="file" id="galleryFileInput" accept="image/*" multiple class="d-none">
           <p class="text-muted small mt-2 mb-0">اولین تصویر به‌عنوان تصویر شاخص نمایش داده می‌شود. برای تغییر ترتیب، تصاویر را جابه‌جا کنید.</p>

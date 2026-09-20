@@ -100,6 +100,89 @@
   renderGallery();
 
   // ---------------------------------------------------------------
+  // BAJI AI product builder: raw photo -> SEO + 7 independent images
+  // ---------------------------------------------------------------
+  const aiBuildBtn = document.getElementById('aiBuildProductBtn');
+  const aiRawInput = document.getElementById('aiRawProductImage');
+  const aiStatus = document.getElementById('aiBuildStatus');
+
+  async function aiJson(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || 'خطای پردازش هوشمند');
+    return data;
+  }
+
+  async function uploadRawProductImage(file) {
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('csrf_token', window.CSRF_TOKEN);
+    const response = await fetch('ajax/upload.php', { method: 'POST', body: fd });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || 'آپلود عکس خام ناموفق بود');
+    return data.url;
+  }
+
+  function applyAiAnalysis(a, attrs) {
+    document.getElementById('f_name').value = a.name || document.getElementById('f_name').value;
+    document.getElementById('f_short_description').value = a.short_description || '';
+    document.getElementById('f_description').value = a.description || '';
+    document.getElementById('f_seo_title').value = a.seo_title || '';
+    document.getElementById('f_meta_description').value = a.meta_description || '';
+    document.getElementById('f_focus_keyword').value = a.focus_keyword || '';
+    if (Array.isArray(a.category_ids) && a.category_ids.length) {
+      document.querySelectorAll('.cat-checkbox').forEach(cb => { cb.checked = a.category_ids.includes(parseInt(cb.value, 10)); });
+    }
+    if (Array.isArray(attrs)) attrs.forEach(attr => addAttributeRow(attr));
+  }
+
+  if (aiBuildBtn) aiBuildBtn.addEventListener('click', async function () {
+    const file = aiRawInput.files[0];
+    if (!file) { alert('اول عکس خام محصول را انتخاب کنید.'); return; }
+    aiBuildBtn.disabled = true;
+    try {
+      aiStatus.textContent = '۱/۳ — در حال آپلود و تحلیل عکس خام...';
+      const rawUrl = await uploadRawProductImage(file);
+      const analyzed = await aiJson('ajax/product_ai_analyze.php', {
+        image_url: rawUrl,
+        name: document.getElementById('f_name').value.trim(),
+        short_description: document.getElementById('f_short_description').value,
+        description: document.getElementById('f_description').value,
+        notes: document.getElementById('aiProductNotes').value,
+        category_ids: collectCategories().map(c => c.id)
+      });
+      applyAiAnalysis(analyzed.analysis, analyzed.attributes);
+      images = [];
+      renderGallery();
+      for (let i = 1; i <= 7; i++) {
+        aiStatus.textContent = '۲/۳ — در حال ساخت عکس حرفه‌ای ' + i + ' از ۷...';
+        const made = await aiJson('ajax/product_ai_image.php', {
+          image_url: rawUrl,
+          product_name: analyzed.analysis.name,
+          index: i,
+          instructions: 'BAJI ecommerce product photo. Keep garment exact; clean varied professional background and pose; no text or collage.'
+        });
+        if (!made.image.id || !made.image.src) throw new Error('عکس ' + i + ' در وردپرس ذخیره نشد.');
+        images.push(made.image);
+        renderGallery();
+      }
+      aiStatus.textContent = '۳/۳ — تصاویر و سئو آماده شد؛ در حال انتشار محصول...';
+      aiStatus.className = 'small mt-2 text-success';
+      document.getElementById('f_status').value = 'publish';
+      document.getElementById('productForm').requestSubmit();
+    } catch (e) {
+      aiStatus.textContent = 'خطا: ' + e.message;
+      aiStatus.className = 'small mt-2 text-danger';
+    } finally {
+      aiBuildBtn.disabled = false;
+    }
+  });
+
+  // ---------------------------------------------------------------
   // Attributes builder
   // ---------------------------------------------------------------
   const attributesWrap = document.getElementById('attributesWrap');
@@ -204,11 +287,13 @@
       images: images.map(i => i.id ? { id: i.id, src: i.src } : { src: i.src }),
       
       meta_data: [
-        {
-          key: '_bajistyle_product_video_id',
-          // Attachment ID is integer
-          value: parseInt(document.getElementById('f_video_url')?.value?.trim() || '0', 10) || null
-        }
+        { key: '_bajistyle_product_video_id', value: parseInt(document.getElementById('f_video_url')?.value?.trim() || '0', 10) || null },
+        { key: '_yoast_wpseo_title', value: document.getElementById('f_seo_title')?.value || '' },
+        { key: '_yoast_wpseo_metadesc', value: document.getElementById('f_meta_description')?.value || '' },
+        { key: '_yoast_wpseo_focuskw', value: document.getElementById('f_focus_keyword')?.value || '' },
+        { key: 'rank_math_title', value: document.getElementById('f_seo_title')?.value || '' },
+        { key: 'rank_math_description', value: document.getElementById('f_meta_description')?.value || '' },
+        { key: 'rank_math_focus_keyword', value: document.getElementById('f_focus_keyword')?.value || '' }
       ]
     };
 
