@@ -19,7 +19,8 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
     {
         $tools = parent::tools();
         $tools[] = $this->extensionTool('get_sms_status','Check BAJI SMS status','Checks whether the server-side IPPanel connection is configured. Never returns the API key.',['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],true,false,true);
-        $tools[] = $this->extensionTool('send_sms','Send an SMS with BAJI IPPanel','Sends one explicitly provided SMS to one Iranian mobile number through the configured BAJI IPPanel account.',['type'=>'object','required'=>['recipient','message'],'properties'=>['recipient'=>['type'=>'string','minLength'=>10,'maxLength'=>16,'description'=>'Iranian mobile number, e.g. 09xxxxxxxxx or +989xxxxxxxxx.'],'message'=>['type'=>'string','minLength'=>1,'maxLength'=>1000]],'additionalProperties'=>false],false,false,false);
+        $tools[] = $this->extensionTool('get_sms_report','Check one BAJI SMS report','Checks the actual IPPanel state for a specific message_id. Use this to distinguish accepted, pending approval, sent to operator, rejected, and delivery-confirmed states.',['type'=>'object','required'=>['message_id'],'properties'=>['message_id'=>['type'=>'integer','minimum'=>1]],'additionalProperties'=>false],true,false,true);
+        $tools[] = $this->extensionTool('send_sms','Send an SMS with BAJI IPPanel','Submits one explicitly provided SMS to one Iranian mobile number. IMPORTANT: success/HTTP 200 only means IPPanel accepted the request. Treat confirmed_sent=true as proof it left the panel; delivery_confirmed=true is stronger delivery evidence. Never describe a pending result as delivered.',['type'=>'object','required'=>['recipient','message'],'properties'=>['recipient'=>['type'=>'string','minLength'=>10,'maxLength'=>16,'description'=>'Iranian mobile number, e.g. 09xxxxxxxxx or +989xxxxxxxxx.'],'message'=>['type'=>'string','minLength'=>1,'maxLength'=>1000]],'additionalProperties'=>false],false,false,false);
         $tools[] = $this->extensionTool(
             'generate_product_images',
             'Generate independent BAJI product images',
@@ -67,6 +68,13 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
     public function callTool(string $name, array $arguments): array
     {
         if ($name === 'get_sms_status') return $this->extensionResult($this->sms->status());
+        if ($name === 'get_sms_report') {
+            try {
+                $messageId=(int)($arguments['message_id']??0);
+                if ($messageId<=0) return $this->extensionError('message_id is required.');
+                return $this->extensionResult($this->sms->getMessageStatus($messageId));
+            } catch (Throwable $e) { return $this->extensionError($e->getMessage()); }
+        }
         if ($name === 'send_sms') {
             try {
                 $recipient=trim((string)($arguments['recipient']??'')); $message=trim((string)($arguments['message']??''));
