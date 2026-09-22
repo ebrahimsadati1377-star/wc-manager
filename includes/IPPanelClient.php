@@ -76,6 +76,25 @@ class IPPanelClient
         }
     }
 
+    public function sendPattern(string $recipient, string $code, array $params = []): array
+    {
+        if (!$this->isConfigured()) {
+            throw new RuntimeException('IPPanel is not configured.');
+        }
+
+        $recipient = $this->normalizeIranMobile($recipient);
+        $code = trim($code);
+        if ($code === '') {
+            throw new InvalidArgumentException('Pattern code is required.');
+        }
+
+        return $this->relayRequest('send-pattern', [
+            'recipient' => $recipient,
+            'code' => $code,
+            'params' => $params,
+        ]);
+    }
+
     public function checkRelay(): array
     {
         if (!$this->isConfigured()) {
