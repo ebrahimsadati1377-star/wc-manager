@@ -20,6 +20,7 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
         $tools = parent::tools();
         $tools[] = $this->extensionTool('get_sms_status','Check BAJI SMS status','Checks whether the server-side IPPanel connection is configured. Never returns the API key.',['type'=>'object','properties'=>(object)[],'additionalProperties'=>false],true,false,true);
         $tools[] = $this->extensionTool('get_sms_report','Check one BAJI SMS report','Checks the actual IPPanel state for a specific message_id. Use this to distinguish accepted, pending approval, sent to operator, rejected, and delivery-confirmed states.',['type'=>'object','required'=>['message_id'],'properties'=>['message_id'=>['type'=>'integer','minimum'=>1]],'additionalProperties'=>false],true,false,true);
+        $tools[] = $this->extensionTool('send_sms_pattern','Send BAJI SMS using an approved IPPanel Pattern','Sends an SMS using a pre-approved IPPanel pattern. Use only active pattern codes. Pattern sends bypass free-text monitoring after approval.',['type'=>'object','required'=>['recipient','code'],'properties'=>['recipient'=>['type'=>'string','minLength'=>10,'maxLength'=>16],'code'=>['type'=>'string','minLength'=>1],'params'=>['type'=>'object','additionalProperties'=>true]],'additionalProperties'=>false],false,false,false);
         $tools[] = $this->extensionTool('send_sms','Send an SMS with BAJI IPPanel','Submits one explicitly provided SMS to one Iranian mobile number. IMPORTANT: success/HTTP 200 only means IPPanel accepted the request. Treat confirmed_sent=true as proof it left the panel; delivery_confirmed=true is stronger delivery evidence. Never describe a pending result as delivered.',['type'=>'object','required'=>['recipient','message'],'properties'=>['recipient'=>['type'=>'string','minLength'=>10,'maxLength'=>16,'description'=>'Iranian mobile number, e.g. 09xxxxxxxxx or +989xxxxxxxxx.'],'message'=>['type'=>'string','minLength'=>1,'maxLength'=>1000]],'additionalProperties'=>false],false,false,false);
         $tools[] = $this->extensionTool(
             'generate_product_images',
@@ -73,6 +74,15 @@ class WcManagerSmsMcpServer extends WcManagerMcpServer
                 $messageId=(int)($arguments['message_id']??0);
                 if ($messageId<=0) return $this->extensionError('message_id is required.');
                 return $this->extensionResult($this->sms->getMessageStatus($messageId));
+            } catch (Throwable $e) { return $this->extensionError($e->getMessage()); }
+        }
+        if ($name === 'send_sms_pattern') {
+            try {
+                $recipient=trim((string)($arguments['recipient']??''));
+                $code=trim((string)($arguments['code']??''));
+                $params=is_array($arguments['params']??null)?$arguments['params']:[];
+                if ($recipient===''||$code==='') return $this->extensionError('recipient and code are required.');
+                return $this->extensionResult($this->sms->sendPattern($recipient,$code,$params));
             } catch (Throwable $e) { return $this->extensionError($e->getMessage()); }
         }
         if ($name === 'send_sms') {
