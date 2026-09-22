@@ -85,6 +85,19 @@ class IPPanelClient
         return $this->relayRequest('status', []);
     }
 
+    public function getMessageStatus(int $messageId): array
+    {
+        if (!$this->isConfigured()) {
+            throw new RuntimeException('IPPanel is not configured.');
+        }
+        if ($messageId <= 0) {
+            throw new InvalidArgumentException('message_id must be a positive integer.');
+        }
+
+        $result = $this->relayRequest('message-status', ['message_id' => $messageId]);
+        return is_array($result['report'] ?? null) ? $result['report'] : $result;
+    }
+
     private function shouldUseRelay(RuntimeException $e): bool
     {
         $message = $e->getMessage();
@@ -197,9 +210,15 @@ class IPPanelClient
 
         return [
             'success' => (bool)($decoded['success'] ?? true),
+            'accepted' => (bool)($decoded['accepted'] ?? ($decoded['success'] ?? true)),
             'provider' => 'ippanel',
             'route' => (string)($decoded['route'] ?? 'wordpress-relay'),
             'status' => (int)($decoded['provider_http'] ?? $status),
+            'message_id' => isset($decoded['message_id']) ? (int)$decoded['message_id'] : null,
+            'final_status' => (string)($decoded['final_status'] ?? ''),
+            'confirmed_sent' => (bool)($decoded['confirmed_sent'] ?? false),
+            'delivery_confirmed' => (bool)($decoded['delivery_confirmed'] ?? false),
+            'report' => is_array($decoded['report'] ?? null) ? $decoded['report'] : null,
             'response' => $decoded['response'] ?? [],
         ];
     }
