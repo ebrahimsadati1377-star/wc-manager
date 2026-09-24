@@ -1,4 +1,3 @@
-[Reading 381 lines from start (total: 381 lines, 0 remaining)]
 
 <?php
 require_once __DIR__ . '/../includes/bootstrap.php';
@@ -380,6 +379,3 @@ $completedCount = $countOrders($wc, ['status' => 'completed']);
   </section>
 </div>
 <?php require __DIR__ . '/partials/footer.php'; ?>
-
-
-[executed on device: vmebiiiaxxxl2ilmyyq32 (53412880-e168-4472-806f-cc7badaf9093)]
