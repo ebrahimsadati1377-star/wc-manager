@@ -1,4 +1,3 @@
-[Reading 314 lines from start (total: 314 lines, 0 remaining)]
 
 <?php
 
@@ -314,5 +313,3 @@ class WooCommerceClient
     public function createTag(array $data): array { return $this->post('products/tags', $data); }
     public function ping(): array { return $this->get('products', ['per_page' => 1]); }
 }
-
-[executed on device: vmebiiiaxxxl2ilmyyq32 (53412880-e168-4472-806f-cc7badaf9093)]
