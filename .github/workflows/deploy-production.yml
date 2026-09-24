@@ -156,6 +156,21 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -e; find '$DEPLOY_PATH/includes' '$DEPLOY_PATH/public' -type f -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null; echo 'Remote PHP lint passed.'"
 
+      - name: Install Bale auto-publish fallback cron
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          ssh -p "$PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'REMOTE'
+          set -euo pipefail
+          mkdir -p "$DEPLOY_PATH/tmp"
+          tmp="$(mktemp)"
+          (crontab -l 2>/dev/null || true) | grep -Fv 'cron/bale-auto-publish.php' > "$tmp" || true
+          printf '%s\n' "* * * * * /usr/bin/flock -n /tmp/baji-bale-auto-publish.lock /usr/bin/php $DEPLOY_PATH/cron/bale-auto-publish.php >> $DEPLOY_PATH/tmp/bale-auto-publish.log 2>&1" >> "$tmp"
+          crontab "$tmp"
+          rm -f "$tmp"
+          REMOTE
       - name: Verify deployed OAuth file hashes
         shell: bash
         run: |
