@@ -1,3 +1,5 @@
+[Reading 226 lines from start (total: 226 lines, 0 remaining)]
+
 <?php
 /** @var string $pageTitle */
 $user = Auth::user();
@@ -11,6 +13,7 @@ $isProducts = in_array($currentPage, [
     'basalam-products.php',
 ], true);
 $isCategories = $currentPage === 'categories.php';
+$isOrders = $currentPage === 'orders.php';
 $isContent = in_array($currentPage, ['manage-posts.php', 'add-post.php'], true);
 $isAdminArea = in_array($currentPage, ['basalam.php', 'users.php', 'settings.php', 'chatgpt.php'], true);
 $userName = trim((string)($user['full_name'] ?? '')) ?: 'کاربر';
@@ -156,6 +159,13 @@ html,body{max-width:100%;overflow-x:hidden}
             <i class="fas fa-layer-group" aria-hidden="true"></i><span>دسته‌بندی‌ها</span>
           </a>
         </li>
+        <?php if (Auth::isAdmin()): ?>
+        <li class="nav-item">
+          <a class="nav-link app-nav-link <?= $isOrders ? 'active' : '' ?>" href="orders.php" <?= $isOrders ? 'aria-current="page"' : '' ?>>
+            <i class="fas fa-receipt" aria-hidden="true"></i><span>سفارش‌ها</span>
+          </a>
+        </li>
+        <?php endif; ?>
         <li class="nav-item">
           <a class="nav-link app-nav-link <?= $isContent ? 'active' : '' ?>" href="manage-posts.php" <?= $isContent ? 'aria-current="page"' : '' ?>>
             <i class="fas fa-pen-to-square" aria-hidden="true"></i><span>محتوا</span>
@@ -216,3 +226,5 @@ html,body{max-width:100%;overflow-x:hidden}
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
   <?php endforeach; ?>
+
+[executed on device: vmebiiiaxxxl2ilmyyq32 (53412880-e168-4472-806f-cc7badaf9093)]
