@@ -64,7 +64,6 @@ function ordersAddress(array $address): string
         trim((string)($address['city'] ?? '')),
         trim((string)($address['address_1'] ?? '')),
         trim((string)($address['address_2'] ?? '')),
-        trim((string)($address['postcode'] ?? '')),
     ], static fn($v) => $v !== '');
     return $parts ? implode('، ', $parts) : 'ثبت نشده';
 }
@@ -122,6 +121,9 @@ if ($viewId > 0):
     $shipping = (array)($order['shipping'] ?? []);
     $phone = trim((string)($billing['phone'] ?? ''));
     $email = trim((string)($billing['email'] ?? ''));
+    $billingPostcode = trim((string)($billing['postcode'] ?? ''));
+    $shippingPostcode = trim((string)($shipping['postcode'] ?? ''));
+    $postcode = $shippingPostcode !== '' ? $shippingPostcode : $billingPostcode;
     $shippingLines = array_map(static fn($line) => (string)($line['method_title'] ?? ''), (array)($order['shipping_lines'] ?? []));
     $shippingLines = array_filter($shippingLines);
     $itemSubtotal = 0.0;
@@ -184,6 +186,7 @@ if ($viewId > 0):
             <div class="order-info-row"><span class="order-info-label">نام</span><span class="order-info-value"><?= e(ordersCustomerName($order)) ?></span></div>
             <div class="order-info-row"><span class="order-info-label">موبایل</span><span class="order-info-value"><?php if ($phone !== ''): ?><a href="tel:<?= e($phone) ?>"><?= e(ordersFaDigits($phone)) ?></a><?php else: ?>ثبت نشده<?php endif; ?></span></div>
             <div class="order-info-row"><span class="order-info-label">ایمیل</span><span class="order-info-value"><?= $email !== '' ? e($email) : 'ثبت نشده' ?></span></div>
+            <div class="order-info-row"><span class="order-info-label">کد پستی</span><span class="order-info-value" dir="ltr"><?= $postcode !== '' ? e(ordersFaDigits($postcode)) : 'ثبت نشده' ?></span></div>
             <div class="order-info-row"><span class="order-info-label">آدرس صورتحساب</span><span class="order-info-value"><?= e(ordersAddress($billing)) ?></span></div>
             <div class="order-info-row"><span class="order-info-label">آدرس ارسال</span><span class="order-info-value"><?= e(ordersAddress($shipping ?: $billing)) ?></span></div>
           </div>
