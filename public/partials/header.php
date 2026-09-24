@@ -1,4 +1,3 @@
-[Reading 226 lines from start (total: 226 lines, 0 remaining)]
 
 <?php
 /** @var string $pageTitle */
@@ -226,5 +225,3 @@ html,body{max-width:100%;overflow-x:hidden}
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
   <?php endforeach; ?>
-
-[executed on device: vmebiiiaxxxl2ilmyyq32 (53412880-e168-4472-806f-cc7badaf9093)]
