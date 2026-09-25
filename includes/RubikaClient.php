@@ -23,7 +23,7 @@ class RubikaClient
         if ($this->token === '') {
             return $this->failure('توکن ربات روبیکا تنظیم نشده است.');
         }
-        return $this->requestJson('getMe', []);
+        return $this->requestJson('getMe', ['getMe' => true]);
     }
     public function getRecentChats(): array
     {
