@@ -92,11 +92,25 @@ class RubikaClient
         }
         $existing = is_array($list['body'] ?? null) ? $list['body'] : [];
         $created = [];
+        $reactivated = [];
         foreach (['product.created', 'product.updated'] as $topic) {
             $found = false;
             foreach ($existing as $hook) {
                 if (($hook['topic'] ?? '') === $topic && ($hook['delivery_url'] ?? '') === $deliveryUrl) {
                     $found = true;
+                    if (($hook['status'] ?? '') !== 'active') {
+                        $hookId = (int)($hook['id'] ?? 0);
+                        if ($hookId > 0) {
+                            $update = $wc->put('webhooks/' . $hookId, [
+                                'status' => 'active',
+                                'secret' => $secret,
+                            ]);
+                            if (!empty($update['error'])) {
+                                return ['success' => false, 'error' => $update['error'], 'created' => $created, 'reactivated' => $reactivated];
+                            }
+                            $reactivated[] = $hookId;
+                        }
+                    }
                     break;
                 }
             }
@@ -117,6 +131,7 @@ class RubikaClient
             'success' => true,
             'delivery_url' => $deliveryUrl,
             'created_webhook_ids' => array_values(array_filter($created)),
+            'reactivated_webhook_ids' => array_values(array_filter($reactivated)),
         ];
     }
 
