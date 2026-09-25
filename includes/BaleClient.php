@@ -117,49 +117,11 @@ class BaleClient
 
     private function buildTrackedProductUrl(string $url, int $productId): string
     {
-        if ($url === '') {
-            return '';
+        if ($productId > 0) {
+            return 'https://bajistyle.ir/b/' . $productId;
         }
 
-        $parts = parse_url($url);
-        if ($parts === false) {
-            return $url;
-        }
-
-        $query = [];
-        if (!empty($parts['query'])) {
-            parse_str((string)$parts['query'], $query);
-        }
-
-        $query['utm_source'] = 'bale';
-        $query['utm_medium'] = 'social';
-        $query['utm_campaign'] = $productId > 0 ? 'product_' . $productId : 'product';
-        $query['utm_content'] = 'bajistyle_channel';
-
-        $tracked = '';
-        if (isset($parts['scheme'])) {
-            $tracked .= $parts['scheme'] . '://';
-        }
-        if (isset($parts['user'])) {
-            $tracked .= $parts['user'];
-            if (isset($parts['pass'])) {
-                $tracked .= ':' . $parts['pass'];
-            }
-            $tracked .= '@';
-        }
-        if (isset($parts['host'])) {
-            $tracked .= $parts['host'];
-        }
-        if (isset($parts['port'])) {
-            $tracked .= ':' . $parts['port'];
-        }
-        $tracked .= $parts['path'] ?? '';
-        $tracked .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
-        if (isset($parts['fragment'])) {
-            $tracked .= '#' . $parts['fragment'];
-        }
-
-        return $tracked;
+        return $url;
     }
 
     private function request(string $method, array $fields, bool $multipart = false): array
