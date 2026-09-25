@@ -78,6 +78,7 @@ class BaleClient
         $regular = trim((string)($product['regular_price'] ?? ''));
         $sale = trim((string)($product['sale_price'] ?? ''));
         $permalink = trim((string)($product['permalink'] ?? ''));
+        $trackedUrl = $this->buildTrackedProductUrl($permalink, (int)($product['id'] ?? 0));
         $stock = (string)($product['stock_status'] ?? '');
 
         $lines = ["✨ {$name}"];
@@ -103,14 +104,62 @@ class BaleClient
             $lines[] = mb_substr((string)preg_replace('/\s+/u', ' ', $short), 0, 220);
         }
 
-        if ($permalink !== '') {
-            $lines[] = $permalink;
+        if ($trackedUrl !== '') {
+            $lines[] = $trackedUrl;
         }
 
         $lines[] = 'باجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍';
         $lines[] = 'Baji Be your best';
 
         return mb_substr(implode("\n", $lines), 0, 950);
+    }
+
+
+    private function buildTrackedProductUrl(string $url, int $productId): string
+    {
+        if ($url === '') {
+            return '';
+        }
+
+        $parts = parse_url($url);
+        if ($parts === false) {
+            return $url;
+        }
+
+        $query = [];
+        if (!empty($parts['query'])) {
+            parse_str((string)$parts['query'], $query);
+        }
+
+        $query['utm_source'] = 'bale';
+        $query['utm_medium'] = 'social';
+        $query['utm_campaign'] = $productId > 0 ? 'product_' . $productId : 'product';
+        $query['utm_content'] = 'bajistyle_channel';
+
+        $tracked = '';
+        if (isset($parts['scheme'])) {
+            $tracked .= $parts['scheme'] . '://';
+        }
+        if (isset($parts['user'])) {
+            $tracked .= $parts['user'];
+            if (isset($parts['pass'])) {
+                $tracked .= ':' . $parts['pass'];
+            }
+            $tracked .= '@';
+        }
+        if (isset($parts['host'])) {
+            $tracked .= $parts['host'];
+        }
+        if (isset($parts['port'])) {
+            $tracked .= ':' . $parts['port'];
+        }
+        $tracked .= $parts['path'] ?? '';
+        $tracked .= '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        if (isset($parts['fragment'])) {
+            $tracked .= '#' . $parts['fragment'];
+        }
+
+        return $tracked;
     }
 
     private function request(string $method, array $fields, bool $multipart = false): array
