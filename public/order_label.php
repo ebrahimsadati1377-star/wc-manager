@@ -12,17 +12,16 @@ if (!$order) {
 }
 $billing = (array)($order['billing'] ?? []);
 $shipping = (array)($order['shipping'] ?? []);
-$recipient = array_filter([
-    trim((string)($shipping['first_name'] ?? '')),
-    trim((string)($shipping['last_name'] ?? '')),
-]);
-if (!$recipient) $recipient = array_filter([trim((string)($billing['first_name'] ?? '')),trim((string)($billing['last_name'] ?? ''))]);
-$recipientName = implode(' ', $recipient);
+$addressPart = static function(string $key) use ($shipping, $billing): string {
+    $ship = trim((string)($shipping[$key] ?? ''));
+    return $ship !== '' ? $ship : trim((string)($billing[$key] ?? ''));
+};
+$recipientName = trim($addressPart('first_name') . ' ' . $addressPart('last_name'));
 $destination = array_filter([
-    trim((string)($shipping['state'] ?? $billing['state'] ?? '')),
-    trim((string)($shipping['city'] ?? $billing['city'] ?? '')),
-    trim((string)($shipping['address_1'] ?? $billing['address_1'] ?? '')),
-    trim((string)($shipping['address_2'] ?? $billing['address_2'] ?? '')),
+    $addressPart('state'),
+    $addressPart('city'),
+    $addressPart('address_1'),
+    $addressPart('address_2'),
 ]);
 $postcode = trim((string)($shipping['postcode'] ?? '')) ?: trim((string)($billing['postcode'] ?? ''));
 $phone = trim((string)($billing['phone'] ?? ''));
