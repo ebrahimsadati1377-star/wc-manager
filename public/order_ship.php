@@ -20,7 +20,9 @@ if ($orderId < 1) {
 }
 try {
     $service = new OrderShipmentService(new WooCommerceClient(), new IPPanelClient());
-    $result = $service->process(
+    $result = (string)($_POST['action'] ?? '') === 'save_cost'
+        ? $service->saveShippingCost($orderId, (string)($_POST['actual_cost_toman'] ?? ''))
+        : $service->process(
         $orderId,
         (string)($_POST['action'] ?? ''),
         (string)($_POST['carrier'] ?? ''),
