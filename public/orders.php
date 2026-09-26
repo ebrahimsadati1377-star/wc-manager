@@ -1,6 +1,7 @@
 
 <?php
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/../includes/OrderShipmentService.php';
 Auth::requireAdmin();
 
 $wc = new WooCommerceClient();
@@ -109,6 +110,8 @@ if ($viewId > 0):
 .order-info-list{display:grid;gap:.7rem}.order-info-row{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;padding-bottom:.7rem;border-bottom:1px dashed #e6e9ed}.order-info-row:last-child{border-bottom:0;padding-bottom:0}.order-info-label{color:#7a8492;font-size:.7rem}.order-info-value{font-size:.76rem;font-weight:800;color:#263140;text-align:left;line-height:1.8;max-width:62%}.order-info-value a{color:#155dcc;text-decoration:none}
 .order-total-box{border-radius:16px;background:#f8fafc;padding:.9rem}.order-total-row{display:flex;justify-content:space-between;gap:1rem;font-size:.76rem;color:#657080;margin:.48rem 0}.order-total-row strong{color:#253142}.order-total-row.grand{border-top:1px solid #e4e8ed;padding-top:.7rem;margin-top:.7rem;font-size:.9rem;font-weight:900}.order-total-row.grand strong{color:#111827;font-size:1.05rem}
 .order-note{padding:.85rem;border-radius:14px;background:#fffbeb;color:#854d0e;font-size:.76rem;line-height:1.9}.order-actions{display:flex;gap:.5rem;flex-wrap:wrap}.order-action{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:42px;padding:.55rem .75rem;border-radius:11px;text-decoration:none;font-size:.75rem;font-weight:850;border:1px solid #dfe4ea;background:#fff;color:#344054}.order-action.primary{background:#111827;border-color:#111827;color:#fff}
+.shipment-card{border-color:#d6e8df;background:linear-gradient(155deg,#ffffff,#f8fffb)}.shipment-card .order-card-title i{background:#e4f7ed;color:#198754}.shipment-hint{font-size:.75rem;line-height:1.85;color:#617184;margin:-.25rem 0 .95rem}.shipment-current{padding:.9rem;border:1px solid #cde9d8;background:#f2fcf6;border-radius:14px;margin-bottom:1rem;display:grid;gap:.7rem}.shipment-current-row{display:flex;align-items:flex-start;justify-content:space-between;gap:.7rem;font-size:.75rem}.shipment-current-row span{color:#527367}.shipment-current-row strong{color:#164b32;max-width:60%;overflow-wrap:anywhere;text-align:left}.shipment-code{font-size:1rem!important;letter-spacing:.04em;direction:ltr}.shipment-copy{background:#fff;border:1px solid #b9decb;color:#167145;border-radius:8px;padding:.3rem .55rem;font-size:.7rem;font-weight:800}.shipment-form{display:grid;gap:.8rem}.shipment-field{display:grid;gap:.32rem;font-size:.75rem;font-weight:850;color:#374151}.shipment-field select,.shipment-field input{display:block;width:100%;min-height:44px;max-width:100%;border:1px solid #d7dfe6;border-radius:11px;padding:.58rem .68rem;background:#fff;color:#263140;font:inherit;font-weight:650;outline:none}.shipment-field select:focus,.shipment-field input:focus{border-color:#1e9566;box-shadow:0 0 0 3px rgba(30,149,102,.12)}.shipment-submit{width:100%;min-height:45px;border:0;border-radius:12px;background:#168356;color:#fff;font-size:.8rem;font-weight:900;display:flex;align-items:center;justify-content:center;gap:.5rem}.shipment-submit:hover{background:#116a47}.shipment-sms-state{border-radius:10px;background:#f5f7fa;padding:.7rem;color:#536173;font-size:.73rem;line-height:1.8;margin:.8rem 0}.shipment-sms-retry{display:flex;align-items:center;justify-content:center;gap:.4rem;width:100%;min-height:41px;border:1px solid #d28b27;border-radius:11px;color:#935a11;background:#fff9ed;font-weight:850;font-size:.75rem}.shipment-warning{background:#fffbeb;border:1px solid #f4e3af;color:#8d6310;padding:.7rem;border-radius:11px;font-size:.73rem;line-height:1.8;margin-top:.75rem}.shipment-small{font-size:.69rem;color:#718096;line-height:1.8}.shipment-other[hidden]{display:none!important}
+
 @media(max-width:900px){.order-detail-grid{grid-template-columns:1fr}.order-item{grid-template-columns:48px minmax(0,1fr);}.order-item-image{width:48px;height:62px}.order-item-total{grid-column:2;text-align:right}.order-info-value{max-width:58%}}@media(max-width:520px){.order-detail-hero{padding:1.05rem;border-radius:18px}.order-card{padding:.85rem;border-radius:16px}.order-info-row{display:grid;gap:.25rem}.order-info-value{max-width:none;text-align:right}}
 </style>
 <div class="orders-shell">
@@ -128,6 +131,14 @@ if ($viewId > 0):
     $shippingLines = array_filter($shippingLines);
     $itemSubtotal = 0.0;
     foreach ((array)($order['line_items'] ?? []) as $line) $itemSubtotal += (float)($line['subtotal'] ?? 0);
+    $shipCarrier = OrderShipmentService::meta($order, '_baji_ship_carrier');
+    $shipOther = OrderShipmentService::meta($order, '_baji_ship_other');
+    $shipTracking = OrderShipmentService::meta($order, '_baji_ship_tracking');
+    $shipDate = OrderShipmentService::meta($order, '_baji_ship_sent_at');
+    $shipSmsState = OrderShipmentService::meta($order, '_baji_ship_sms_state');
+    $shipSmsDate = OrderShipmentService::meta($order, '_baji_ship_sms_updated_at');
+    $shipSmsId = OrderShipmentService::meta($order, '_baji_ship_sms_id');
+    $shipCanEdit = in_array((string)($order['status'] ?? ''), ['processing','completed'], true);
   ?>
     <section class="order-detail-hero">
       <div>
@@ -195,6 +206,57 @@ if ($viewId > 0):
             <a class="order-action primary" href="tel:<?= e($phone) ?>"><i class="fas fa-phone"></i> تماس با مشتری</a>
             <button class="order-action" type="button" onclick="navigator.clipboard?.writeText('<?= e($phone) ?>')"><i class="fas fa-copy"></i> کپی شماره</button>
           </div>
+          <?php endif; ?>
+        </section>
+
+
+        <section class="order-card shipment-card" id="shipment">
+          <h2 class="order-card-title"><i class="fas fa-truck-fast"></i> ثبت ارسال و کد رهگیری</h2>
+          <p class="shipment-hint">شرکت حمل‌ونقل و شناسه مرسوله را وارد کنید. با ثبت ارسال، سفارش‌های «در حال پردازش» در ووکامرس «تکمیل‌شده» می‌شوند و پیامک اطلاع‌رسانی به شماره مشتری ارسال خواهد شد.</p>
+          <?php if ($shipTracking !== ''): ?>
+          <div class="shipment-current">
+            <div class="shipment-current-row"><span>شرکت ارسال</span><strong><?= e(OrderShipmentService::carrierLabel($shipCarrier,$shipOther)) ?></strong></div>
+            <div class="shipment-current-row"><span>کد رهگیری</span><strong class="shipment-code"><?= e($shipTracking) ?></strong></div>
+            <button type="button" class="shipment-copy" data-code="<?= e($shipTracking) ?>" onclick="navigator.clipboard?.writeText(this.dataset.code)">کپی کد رهگیری <i class="fas fa-copy" aria-hidden="true"></i></button>
+            <div class="shipment-current-row"><span>زمان ثبت ارسال</span><strong><?= e(ordersFormatDate($shipDate)) ?></strong></div>
+          </div>
+          <div class="shipment-sms-state"><i class="fas fa-comment-sms" aria-hidden="true"></i> وضعیت پیامک: <strong><?= e(OrderShipmentService::smsLabel($shipSmsState)) ?></strong>
+            <?php if ($shipSmsDate !== ''): ?><br><span class="shipment-small">آخرین بررسی: <?= e(ordersFormatDate($shipSmsDate)) ?></span><?php endif; ?>
+            <?php if ($shipSmsId !== ''): ?><br><span class="shipment-small">شناسه پیامک پنل: <?= e($shipSmsId) ?></span><?php endif; ?>
+          </div>
+          <?php if (in_array($shipSmsState, ['failed','no_phone'], true) && $shipCanEdit): ?>
+          <form method="post" action="order_ship.php" onsubmit="return confirm('پیامک کد رهگیری این سفارش دوباره برای مشتری ارسال شود؟')">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="action" value="retry_sms">
+            <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+            <button class="shipment-sms-retry" type="submit"><i class="fas fa-rotate-right" aria-hidden="true"></i> تلاش مجدد ارسال پیامک</button>
+          </form>
+          <?php endif; ?>
+          <?php endif; ?>
+          <?php if ($shipCanEdit): ?>
+          <form method="post" action="order_ship.php" class="shipment-form" style="margin-top:1rem" onsubmit="return confirm('اطلاعات ارسال ثبت شود، وضعیت سفارش تکمیل شود و پیامک حاوی کد رهگیری به مشتری ارسال شود؟')">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="action" value="ship">
+            <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+            <label class="shipment-field">شرکت حمل‌ونقل
+              <select name="carrier" required id="ship-carrier-<?= (int)$order['id'] ?>" onchange="document.getElementById('ship-other-<?= (int)$order['id'] ?>').hidden=(this.value!=='other');document.getElementById('ship-other-input-<?= (int)$order['id'] ?>').required=(this.value==='other')">
+                <option value="">انتخاب روش ارسال...</option>
+                <?php foreach (OrderShipmentService::carriers() as $key => $label): ?>
+                <option value="<?= e($key) ?>" <?= $shipCarrier===$key ? 'selected' : '' ?>><?= e($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="shipment-field shipment-other" id="ship-other-<?= (int)$order['id'] ?>" <?= $shipCarrier==='other' ? '' : 'hidden' ?>>نام شرکت حمل‌ونقل
+              <input id="ship-other-input-<?= (int)$order['id'] ?>" name="other_carrier" value="<?= e($shipOther) ?>" maxlength="60" placeholder="نام شرکت..." <?= $shipCarrier==='other' ? 'required' : '' ?>>
+            </label>
+            <label class="shipment-field">کد رهگیری / شناسه مرسوله
+              <input name="tracking_code" dir="ltr" inputmode="text" autocomplete="off" required minlength="4" maxlength="64" placeholder="کد درج‌شده روی رسید ارسال" value="<?= e($shipTracking) ?>">
+            </label>
+            <p class="shipment-small" style="margin:0">شماره موبایل مشتری: <?= $phone !== '' ? e(ordersFaDigits($phone)) : 'ثبت نشده' ?>. مبلغ و اطلاعات پرداخت تغییری نمی‌کند. ثبت مجدد همان کد پیامک تکراری نمی‌فرستد.</p>
+            <button class="shipment-submit" type="submit"><i class="fas fa-box-check" aria-hidden="true"></i> <?= $shipTracking !== '' ? 'ذخیره تغییرات ارسال' : 'ثبت ارسال و تکمیل سفارش' ?></button>
+          </form>
+          <?php else: ?>
+          <div class="shipment-warning"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> برای سفارش‌های پرداخت‌نشده، معلق، لغوشده یا مستردشده امکان تکمیل خودکار وجود ندارد؛ ابتدا وضعیت سفارش را بررسی کنید.</div>
           <?php endif; ?>
         </section>
 
