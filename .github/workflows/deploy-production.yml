@@ -142,6 +142,8 @@ jobs:
             --exclude='config/ippanel-secret.php' \
             --exclude='public/uploads/' \
             --exclude='public/uploads/***' \
+            --exclude='storage/' \
+            --exclude='storage/***' \
             -e "ssh -p $PORT -o BatchMode=yes -o StrictHostKeyChecking=yes" \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
 
