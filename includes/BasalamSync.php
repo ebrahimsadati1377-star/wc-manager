@@ -556,11 +556,17 @@ class BasalamSync
     {
         $maxImages = min(10, max(1, (int)getSetting('basalam_max_images', '6')));
         $ids = [];
-        $safeCropTopPercent = 0;
 
-        // Once a product has been remediated for Basalam image moderation, keep
-        // using the safe Basalam-only crop on future force-syncs. Woo originals
-        // remain untouched and the policy can be reset by removing the job row.
+        // BAJI policy: every image sent to Basalam uses a Basalam-only safe crop
+        // by default. WooCommerce originals are only read and are never modified.
+        // This prevents new products from first being sent with a model's exposed
+        // hair/head and then waiting for moderation remediation.
+        $safeCropTopPercent = $this->settingBool('basalam_safe_images_default', true)
+            ? max(15, min(40, (int)getSetting('basalam_safe_images_crop_top_percent', '28')))
+            : 0;
+
+        // A per-product remediation job can override the default crop percentage.
+        // This also preserves the chosen Basalam-only treatment on future force-syncs.
         $wcProductId = (int)($product['id'] ?? 0);
         if ($wcProductId > 0) {
             try {
@@ -574,8 +580,8 @@ class BasalamSync
                     $safeCropTopPercent = max(15, min(40, (int)($safeJob['crop_top_percent'] ?? 28)));
                 }
             } catch (Throwable $e) {
-                // Table may not exist yet on older installs; fall back to normal images.
-                $safeCropTopPercent = 0;
+                // If the remediation table is unavailable, keep the global
+                // Basalam-safe default rather than falling back to raw Woo images.
             }
         }
 
