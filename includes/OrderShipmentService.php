@@ -36,6 +36,79 @@ class OrderShipmentService
         return self::CARRIERS;
     }
 
+    /**
+     * Verified carrier tracking entry points. If a carrier has no verified
+     * official tracking page, do not invent a destination.
+     */
+    public static function trackingUrl(string $carrier, string $tracking = ''): string
+    {
+        if (str_starts_with($carrier, 'post_')) return 'https://tracking.post.ir/';
+        return match ($carrier) {
+            'tipax' => 'https://tipaxco.com/',
+            'chapar' => $tracking !== ''
+                ? 'https://chaparnet.com/track/' . rawurlencode($tracking)
+                : 'https://chaparnet.com/track/',
+            default => '',
+        };
+    }
+
+    public static function moneyInput(string $value): ?int
+    {
+        $digits = self::normalizeTracking($value);
+        $digits = str_replace([',', '٬', '،', ' ', '‌'], '', $digits);
+        if (!preg_match('/^\d{1,9}$/D', $digits)) return null;
+        $n = (int)$digits;
+        return $n <= 100000000 ? $n : null;
+    }
+
+    /**
+     * Actual freight expense, never changes what the customer paid.
+     * Empty is unknown, while zero is a valid explicitly entered expense.
+     */
+    public function saveShippingCost(int $orderId, string $cost): array
+    {
+        if ($orderId < 1 || ($amount = self::moneyInput($cost)) === null) {
+            return ['type'=>'danger','message'=>'هزینه واقعی ارسال را به تومان، عددی بین صفر تا صد میلیون وارد کنید.'];
+        }
+        $lock = @fopen(sys_get_temp_dir() . '/baji-shipment-' . $orderId . '.lock', 'c');
+        if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+            if (is_resource($lock)) fclose($lock);
+            return ['type'=>'warning','message'=>'سفارش در حال ویرایش است؛ چند لحظه دیگر دوباره تلاش کنید.'];
+        }
+        try {
+            $read = $this->wc->getOrder($orderId);
+            if (!empty($read['error']) || (int)($read['body']['id'] ?? 0) !== $orderId) {
+                return ['type'=>'danger','message'=>'سفارش از ووکامرس دریافت نشد؛ هزینه ذخیره نشد.'];
+            }
+            $order = $read['body'];
+            if (self::meta($order, '_baji_ship_tracking') === '') {
+                return ['type'=>'danger','message'=>'برای ثبت هزینه واقعی ابتدا ارسال سفارش را ثبت کنید.'];
+            }
+            if (!in_array((string)($order['status'] ?? ''), ['processing', 'completed'], true)) {
+                return ['type'=>'danger','message'=>'وضعیت سفارش برای ثبت هزینه ارسال مجاز نیست.'];
+            }
+            $previous = self::meta($order, '_baji_ship_actual_cost_toman');
+            if ($previous !== '' && (int)$previous === $amount) {
+                return ['type'=>'warning','message'=>'این هزینه قبلاً برای سفارش ثبت شده است.'];
+            }
+            $user = (array)($_SESSION['user'] ?? []);
+            $save = $this->update($orderId, ['meta_data'=>self::metaItems([
+                '_baji_ship_actual_cost_toman'=>(string)$amount,
+                '_baji_ship_cost_recorded_at'=>gmdate('c'),
+                '_baji_ship_cost_recorded_by'=>(string)($user['full_name'] ?? $user['username'] ?? 'مدیر'),
+                '_baji_ship_cost_recorded_by_id'=>(string)($user['id'] ?? ''),
+            ])]);
+            if (!empty($save['error']) || self::meta((array)($save['body'] ?? []), '_baji_ship_actual_cost_toman') !== (string)$amount) {
+                return ['type'=>'danger','message'=>'ذخیره هزینه در ووکامرس تأیید نشد؛ دوباره بررسی کنید.'];
+            }
+            logActivity('shipping_expense_saved', 'order:'.$orderId, 'actual_toman='.$amount.' previous='.$previous);
+            return ['type'=>'success','message'=>'هزینه واقعی حمل در سفارش ووکامرس ثبت شد؛ مبلغ پرداختی مشتری تغییری نکرد.'];
+        } finally {
+            flock($lock,LOCK_UN);
+            fclose($lock);
+        }
+    }
+
     public static function meta(array $order, string $key, string $default = ''): string
     {
         foreach ((array)($order['meta_data'] ?? []) as $item) {
@@ -96,11 +169,11 @@ class OrderShipmentService
         return $this->wc->put('orders/' . $orderId, $fields);
     }
 
-    private static function message(int $orderId, string $carrierLabel, string $tracking): string
+    private static function message(int $orderId, string $carrierLabel, string $tracking, string $trackUrl = ''): string
     {
         return "باجی 🤍\nسفارش #" . $orderId . " شما با " . $carrierLabel . " ارسال شد.\n"
             . "کد رهگیری: " . $tracking . "\n"
-            . "برای پیگیری، به سامانه شرکت حمل‌ونقل مراجعه کنید.\n"
+            . "پیگیری مرسوله: " . ($trackUrl !== '' ? $trackUrl : 'از طریق شرکت حمل‌ونقل') . "\n"
             . "bajistyle.ir\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
     }
 
@@ -176,7 +249,10 @@ class OrderShipmentService
                     '_baji_ship_carrier' => $carrier,
                     '_baji_ship_other' => $other,
                     '_baji_ship_tracking' => $tracking,
+                    '_baji_ship_track_url' => self::trackingUrl($carrier, $tracking),
                     '_baji_ship_sent_at' => gmdate('c'),
+                    '_baji_ship_handover_by' => (string)($_SESSION['user']['full_name'] ?? $_SESSION['user']['username'] ?? 'مدیر'),
+                    '_baji_ship_handover_by_id' => (string)($_SESSION['user']['id'] ?? ''),
                     '_baji_ship_sms_state' => $phoneValid ? 'sending' : 'no_phone',
                     '_baji_ship_sms_key' => $fingerprint,
                     '_baji_ship_sms_id' => '',
@@ -211,7 +287,7 @@ class OrderShipmentService
             $messageId = '';
             $feedback = '';
             try {
-                $result = $this->sms->send($phone, self::message($orderId, self::carrierLabel($carrier, $other), $tracking));
+                $result = $this->sms->send($phone, self::message($orderId, self::carrierLabel($carrier, $other), $tracking, self::trackingUrl($carrier, $tracking)));
                 $accepted = (bool)($result['accepted'] ?? $result['success'] ?? false);
                 if (!$accepted) {
                     $feedback = 'پنل پیامک درخواست را نپذیرفت.';
