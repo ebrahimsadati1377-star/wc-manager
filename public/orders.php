@@ -112,10 +112,29 @@ if ($viewId > 0):
 .order-note{padding:.85rem;border-radius:14px;background:#fffbeb;color:#854d0e;font-size:.76rem;line-height:1.9}.order-actions{display:flex;gap:.5rem;flex-wrap:wrap}.order-action{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:42px;padding:.55rem .75rem;border-radius:11px;text-decoration:none;font-size:.75rem;font-weight:850;border:1px solid #dfe4ea;background:#fff;color:#344054}.order-action.primary{background:#111827;border-color:#111827;color:#fff}
 .shipment-card{border-color:#d6e8df;background:linear-gradient(155deg,#ffffff,#f8fffb)}.shipment-card .order-card-title i{background:#e4f7ed;color:#198754}.shipment-hint{font-size:.75rem;line-height:1.85;color:#617184;margin:-.25rem 0 .95rem}.shipment-current{padding:.9rem;border:1px solid #cde9d8;background:#f2fcf6;border-radius:14px;margin-bottom:1rem;display:grid;gap:.7rem}.shipment-current-row{display:flex;align-items:flex-start;justify-content:space-between;gap:.7rem;font-size:.75rem}.shipment-current-row span{color:#527367}.shipment-current-row strong{color:#164b32;max-width:60%;overflow-wrap:anywhere;text-align:left}.shipment-code{font-size:1rem!important;letter-spacing:.04em;direction:ltr}.shipment-copy{background:#fff;border:1px solid #b9decb;color:#167145;border-radius:8px;padding:.3rem .55rem;font-size:.7rem;font-weight:800}.shipment-form{display:grid;gap:.8rem}.shipment-field{display:grid;gap:.32rem;font-size:.75rem;font-weight:850;color:#374151}.shipment-field select,.shipment-field input{display:block;width:100%;min-height:44px;max-width:100%;border:1px solid #d7dfe6;border-radius:11px;padding:.58rem .68rem;background:#fff;color:#263140;font:inherit;font-weight:650;outline:none}.shipment-field select:focus,.shipment-field input:focus{border-color:#1e9566;box-shadow:0 0 0 3px rgba(30,149,102,.12)}.shipment-submit{width:100%;min-height:45px;border:0;border-radius:12px;background:#168356;color:#fff;font-size:.8rem;font-weight:900;display:flex;align-items:center;justify-content:center;gap:.5rem}.shipment-submit:hover{background:#116a47}.shipment-sms-state{border-radius:10px;background:#f5f7fa;padding:.7rem;color:#536173;font-size:.73rem;line-height:1.8;margin:.8rem 0}.shipment-sms-retry{display:flex;align-items:center;justify-content:center;gap:.4rem;width:100%;min-height:41px;border:1px solid #d28b27;border-radius:11px;color:#935a11;background:#fff9ed;font-weight:850;font-size:.75rem}.shipment-warning{background:#fffbeb;border:1px solid #f4e3af;color:#8d6310;padding:.7rem;border-radius:11px;font-size:.73rem;line-height:1.8;margin-top:.75rem}.shipment-small{font-size:.69rem;color:#718096;line-height:1.8}.shipment-other[hidden]{display:none!important}
 
+.shipment-divider{border:0;border-top:1px dashed #dce6df;margin:1rem 0}
+.shipment-link{display:inline-flex!important;align-items:center;justify-content:center;gap:.45rem;padding:.55rem .8rem;border:1px solid #a4d8be;background:#ebfaf1;color:#136840!important;text-decoration:none;border-radius:10px;font-size:.75rem;font-weight:900}
+.shipment-link.secondary{border-color:#d7dfea;background:#f4f7fa;color:#263e5c!important}
+.shipment-tools{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0}
+.shipment-finance-box{display:grid;gap:.6rem;padding:.8rem;border:1px solid #dde7f0;background:#f7fafc;border-radius:12px;margin:.8rem 0;font-size:.75rem}
+.shipment-finance-row{display:flex;align-items:center;justify-content:space-between;gap:.7rem}
+.shipment-finance-row span{color:#687785}
+.shipment-finance-row strong{text-align:left}
+.shipment-finance-row .plus{color:#168356}
+.shipment-finance-row .minus{color:#c13b34}
+.shipment-file-link{font-size:.75rem;text-decoration:none!important;color:#176c4c!important;font-weight:900;display:inline-flex;gap:.4rem;align-items:center}
+.shipment-receipt-image{width:100%;max-height:170px;object-fit:contain;border:1px solid #e2e7e9;border-radius:10px;background:#fff;margin:.55rem 0}
+.shipment-cost-note{font-size:.69rem;color:#65758a;line-height:1.9;margin:.3rem 0}
+
+
 @media(max-width:900px){.order-detail-grid{grid-template-columns:1fr}.order-item{grid-template-columns:48px minmax(0,1fr);}.order-item-image{width:48px;height:62px}.order-item-total{grid-column:2;text-align:right}.order-info-value{max-width:58%}}@media(max-width:520px){.order-detail-hero{padding:1.05rem;border-radius:18px}.order-card{padding:.85rem;border-radius:16px}.order-info-row{display:grid;gap:.25rem}.order-info-value{max-width:none;text-align:right}}
 </style>
 <div class="orders-shell">
   <a href="orders.php" class="orders-back"><i class="fas fa-arrow-right"></i> بازگشت به سفارش‌ها</a>
+  <div class="shipment-tools" style="margin-bottom:1rem">
+    <a class="shipment-link secondary" href="order_label.php?view=<?= $viewId ?>" target="_blank" rel="noopener"><i class="fas fa-print"></i> چاپ لیبل پستی A6</a>
+    <a class="shipment-link secondary" href="shipping_finance.php"><i class="fas fa-chart-line"></i> گزارش هزینه‌های ارسال</a>
+  </div>
   <?php if (!$order): ?>
     <div class="alert alert-danger">سفارش پیدا نشد یا ارتباط با ووکامرس خطا دارد: <?= e((string)($detailRes['error'] ?? 'خطای نامشخص')) ?></div>
   <?php else:
@@ -138,6 +157,16 @@ if ($viewId > 0):
     $shipSmsState = OrderShipmentService::meta($order, '_baji_ship_sms_state');
     $shipSmsDate = OrderShipmentService::meta($order, '_baji_ship_sms_updated_at');
     $shipSmsId = OrderShipmentService::meta($order, '_baji_ship_sms_id');
+    $shipUrl = OrderShipmentService::trackingUrl($shipCarrier, $shipTracking);
+    $shipBy = OrderShipmentService::meta($order, '_baji_ship_handover_by');
+    $actualCostRaw = OrderShipmentService::meta($order, '_baji_ship_actual_cost_toman');
+    $costBy = OrderShipmentService::meta($order, '_baji_ship_cost_recorded_by');
+    $costDate = OrderShipmentService::meta($order, '_baji_ship_cost_recorded_at');
+    $receiptFile = OrderShipmentService::meta($order, '_baji_ship_receipt_file');
+    $receiptName = OrderShipmentService::meta($order, '_baji_ship_receipt_name');
+    $receiptAt = OrderShipmentService::meta($order, '_baji_ship_receipt_at');
+    $receiptBy = OrderShipmentService::meta($order, '_baji_ship_receipt_by');
+    $customerShippingPaid = (int)round((float)($order['shipping_total'] ?? 0));
     $shipCanEdit = in_array((string)($order['status'] ?? ''), ['processing','completed'], true);
   ?>
     <section class="order-detail-hero">
@@ -219,6 +248,13 @@ if ($viewId > 0):
             <div class="shipment-current-row"><span>کد رهگیری</span><strong class="shipment-code"><?= e($shipTracking) ?></strong></div>
             <button type="button" class="shipment-copy" data-code="<?= e($shipTracking) ?>" onclick="navigator.clipboard?.writeText(this.dataset.code)">کپی کد رهگیری <i class="fas fa-copy" aria-hidden="true"></i></button>
             <div class="shipment-current-row"><span>زمان ثبت ارسال</span><strong><?= e(ordersFormatDate($shipDate)) ?></strong></div>
+            <div class="shipment-current-row"><span>ثبت‌کننده ارسال</span><strong><?= e($shipBy ?: 'ثبت نشده') ?></strong></div>
+            <?php if ($shipUrl !== ''): ?>
+              <a href="<?= e($shipUrl) ?>" class="shipment-link" target="_blank" rel="noopener noreferrer"><i class="fas fa-location-dot" aria-hidden="true"></i> رهگیری در سایت شرکت حمل</a>
+              <span class="shipment-small">کد رهگیری را در سامانه شرکت وارد کنید؛ برای چاپار لینک شناسه مرسوله را هم شامل می‌شود.</span>
+            <?php else: ?>
+              <span class="shipment-small">لینک مستقیم تأییدشده برای این شرکت موجود نیست؛ کد را با سامانه شرکت حمل یا پشتیبانی آن پیگیری کنید.</span>
+            <?php endif; ?>
           </div>
           <div class="shipment-sms-state"><i class="fas fa-comment-sms" aria-hidden="true"></i> وضعیت پیامک: <strong><?= e(OrderShipmentService::smsLabel($shipSmsState)) ?></strong>
             <?php if ($shipSmsDate !== ''): ?><br><span class="shipment-small">آخرین بررسی: <?= e(ordersFormatDate($shipSmsDate)) ?></span><?php endif; ?>
@@ -259,6 +295,64 @@ if ($viewId > 0):
           <div class="shipment-warning"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> برای سفارش‌های پرداخت‌نشده، معلق، لغوشده یا مستردشده امکان تکمیل خودکار وجود ندارد؛ ابتدا وضعیت سفارش را بررسی کنید.</div>
           <?php endif; ?>
         </section>
+
+
+        <?php if ($shipTracking !== ''): ?>
+        <section class="order-card">
+          <h2 class="order-card-title"><i class="fas fa-coins"></i> هزینه واقعی حمل (حسابداری)</h2>
+          <p class="shipment-hint">هزینه‌ای که واقعاً به شرکت حمل‌ونقل پرداخت شده را وارد کن؛ مبلغ کرایه‌ای که مشتری در تسویه‌حساب پرداخته تغییری نمی‌کند. اختلاف این دو، مازاد/کسری حمل است و سود خالص کل سفارش نیست.</p>
+          <div class="shipment-finance-box">
+            <div class="shipment-finance-row"><span>کرایه دریافتی از مشتری</span><strong><?= e(formatPrice($customerShippingPaid)) ?></strong></div>
+            <div class="shipment-finance-row"><span>هزینه واقعی پرداختی</span><strong><?= $actualCostRaw !== '' ? e(formatPrice($actualCostRaw)) : 'هنوز ثبت نشده' ?></strong></div>
+            <div class="shipment-finance-row"><span>مازاد / کسری حمل</span>
+              <?php if ($actualCostRaw !== ''): $delta=$customerShippingPaid-(int)$actualCostRaw; ?>
+              <strong class="<?= $delta >= 0 ? 'plus' : 'minus' ?>"><?= e(formatPrice($delta)) ?></strong>
+              <?php else: ?><strong>نامشخص</strong><?php endif; ?>
+            </div>
+            <?php if ($costBy !== ''): ?><div class="shipment-cost-note">ثبت هزینه توسط <?= e($costBy) ?> · <?= e(ordersFormatDate($costDate)) ?></div><?php endif; ?>
+          </div>
+          <?php if ($shipCanEdit): ?>
+          <form method="post" action="order_ship.php" class="shipment-form" onsubmit="return confirm('هزینه واقعی حمل در سفارش ووکامرس ذخیره شود؟')">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+            <input type="hidden" name="action" value="save_cost">
+            <label class="shipment-field">مبلغ پرداختی به شرکت حمل (تومان)
+              <input type="text" name="actual_cost_toman" required inputmode="numeric" pattern="[0-9۰-۹٠-٩,٬، ]+" placeholder="مثلاً ۱۲۰٬۰۰۰" value="<?= e($actualCostRaw) ?>" dir="ltr" maxlength="15">
+            </label>
+            <button type="submit" class="shipment-submit"><i class="fas fa-floppy-disk"></i> ثبت هزینه واقعی حمل</button>
+          </form>
+          <?php endif; ?>
+          <div class="shipment-tools"><a class="shipment-link secondary" href="shipping_finance.php"><i class="fas fa-table-list"></i> گزارش و خروجی CSV هزینه ارسال</a></div>
+        </section>
+
+        <section class="order-card">
+          <h2 class="order-card-title"><i class="fas fa-file-image"></i> رسید تحویل به شرکت حمل</h2>
+          <?php if ($receiptFile !== ''): ?>
+            <div class="shipment-current">
+              <a class="shipment-file-link" href="order_receipt.php?view=<?= (int)$order['id'] ?>" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i> مشاهده رسید ثبت‌شده<?= $receiptName !== '' ? ': '.e($receiptName) : '' ?></a>
+              <?php if (preg_match('/\.(jpg|png|webp)$/D', $receiptFile)): ?>
+              <a href="order_receipt.php?view=<?= (int)$order['id'] ?>" target="_blank" rel="noopener"><img class="shipment-receipt-image" loading="lazy" src="order_receipt.php?view=<?= (int)$order['id'] ?>" alt="تصویر رسید ارسال سفارش"></a>
+              <?php endif; ?>
+              <div class="shipment-small">ثبت‌شده توسط <?= e($receiptBy ?: 'مدیر') ?> · <?= e(ordersFormatDate($receiptAt)) ?></div>
+            </div>
+          <?php else: ?>
+            <p class="shipment-hint">هنوز تصویر یا فایل رسید این سفارش ثبت نشده است.</p>
+          <?php endif; ?>
+          <?php if ((string)($order['status'] ?? '') === 'completed'): ?>
+          <form method="post" action="order_receipt_upload.php" enctype="multipart/form-data" class="shipment-form">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+            <label class="shipment-field"><?= $receiptFile !== '' ? 'جایگزینی رسید' : 'بارگذاری رسید پستی / تصویر تحویل' ?>
+              <input type="file" name="receipt" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" required>
+            </label>
+            <p class="shipment-small" style="margin:0">JPG، PNG، WebP یا PDF تا ۲ مگابایت؛ فایل در پوشه خصوصی سرور نگهداری می‌شود و فقط مدیر می‌تواند آن را ببیند.</p>
+            <button type="submit" class="shipment-submit"><i class="fas fa-upload"></i> ذخیره رسید ارسال</button>
+          </form>
+          <?php else: ?>
+            <div class="shipment-warning">ابتدا ارسال و تکمیل سفارش را ثبت کنید؛ سپس رسید قابل بارگذاری است.</div>
+          <?php endif; ?>
+        </section>
+        <?php endif; ?>
 
         <section class="order-card">
           <h2 class="order-card-title"><i class="fas fa-credit-card"></i> پرداخت و ارسال</h2>
@@ -348,7 +442,10 @@ $completedCount = $countOrders($wc, ['status' => 'completed']);
         <h1 class="orders-title">مدیریت سفارش‌ها</h1>
         <p class="orders-subtitle">همه سفارش‌های سایت، وضعیت پرداخت، اطلاعات مشتری و جزئیات خرید در یک صفحه.</p>
       </div>
-      <a class="orders-refresh" href="<?= e(ordersQueryUrl(['page'=>1])) ?>"><i class="fas fa-rotate"></i> تازه‌سازی سفارش‌ها</a>
+      <div class="shipment-tools" style="margin:0">
+        <a class="orders-refresh" href="shipping_finance.php"><i class="fas fa-chart-line"></i> گزارش مالی ارسال</a>
+        <a class="orders-refresh" href="<?= e(ordersQueryUrl(['page'=>1])) ?>"><i class="fas fa-rotate"></i> تازه‌سازی سفارش‌ها</a>
+      </div>
     </div>
   </section>
 
