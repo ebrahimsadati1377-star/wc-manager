@@ -345,7 +345,7 @@ if ($viewId > 0):
             <label class="shipment-field"><?= $receiptFile !== '' ? 'جایگزینی رسید' : 'بارگذاری رسید پستی / تصویر تحویل' ?>
               <input type="file" name="receipt" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" required>
             </label>
-            <p class="shipment-small" style="margin:0">JPG، PNG، WebP یا PDF تا ۲ مگابایت؛ فایل در پوشه خصوصی سرور نگهداری می‌شود و فقط مدیر می‌تواند آن را ببیند.</p>
+            <p class="shipment-small" style="margin:0">JPG، PNG، WebP یا PDF تا ۵ مگابایت؛ فایل در پوشه خصوصی سرور نگهداری می‌شود و فقط مدیر می‌تواند آن را ببیند.</p>
             <button type="submit" class="shipment-submit"><i class="fas fa-upload"></i> ذخیره رسید ارسال</button>
           </form>
           <?php else: ?>
