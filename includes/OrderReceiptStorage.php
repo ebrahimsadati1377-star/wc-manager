@@ -5,7 +5,7 @@
  */
 final class OrderReceiptStorage
 {
-    private const LIMIT_BYTES = 2097152;
+    private const LIMIT_BYTES = 5242880;
     private const MIME_EXT = [
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
@@ -41,13 +41,13 @@ final class OrderReceiptStorage
         $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
         if ($error !== UPLOAD_ERR_OK) {
             return ['type'=>'danger','message'=> $error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE
-                ? 'حجم فایل بیشتر از حد مجاز است؛ تصویر را کوچک‌تر کنید (حداکثر ۲ مگابایت).'
+                ? 'حجم فایل بیشتر از حد مجاز است؛ تصویر را کوچک‌تر کنید (حداکثر ۵ مگابایت).'
                 : 'فایل رسید بارگذاری نشد؛ یک تصویر یا PDF انتخاب کنید.'];
         }
         $tmp = (string)($file['tmp_name'] ?? '');
         $size = (int)($file['size'] ?? 0);
         if ($size < 1 || $size > self::LIMIT_BYTES || !is_uploaded_file($tmp)) {
-            return ['type'=>'danger','message'=>'رسید باید فایل واقعی و کمتر از ۲ مگابایت باشد.'];
+            return ['type'=>'danger','message'=>'رسید باید فایل واقعی و کمتر از ۵ مگابایت باشد.'];
         }
         $type = (new finfo(FILEINFO_MIME_TYPE))->file($tmp);
         if (!isset(self::MIME_EXT[$type])) {
