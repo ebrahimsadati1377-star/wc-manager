@@ -172,11 +172,21 @@ class IPPanelClient
             $safeMessage = is_array($decoded) ? (string)($decoded['message'] ?? $decoded['error'] ?? 'IPPanel API error') : 'IPPanel API error';
             throw new RuntimeException($safeMessage . ' (HTTP ' . $status . ')');
         }
+        // Edge returns data.message_outbox_ids. Keep the identifier for audit
+        // and distinguish API acceptance from confirmed handset delivery.
+        $accepted = is_array($decoded) && array_key_exists('status', (array)($decoded['meta'] ?? []))
+            ? (bool)$decoded['meta']['status'] : true;
+        $ids = is_array($decoded['data']['message_outbox_ids'] ?? null)
+            ? $decoded['data']['message_outbox_ids'] : [];
         return [
-            'success' => true,
+            'success' => $accepted,
+            'accepted' => $accepted,
             'provider' => 'ippanel',
             'route' => 'direct',
             'status' => $status,
+            'message_id' => isset($ids[0]) && is_numeric($ids[0]) ? (int)$ids[0] : null,
+            'confirmed_sent' => false,
+            'delivery_confirmed' => false,
             'response' => is_array($decoded) ? $decoded : ['raw' => (string)$body],
         ];
     }
