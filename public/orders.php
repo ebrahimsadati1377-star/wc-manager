@@ -157,6 +157,9 @@ if ($viewId > 0):
     $shipSmsState = OrderShipmentService::meta($order, '_baji_ship_sms_state');
     $shipSmsDate = OrderShipmentService::meta($order, '_baji_ship_sms_updated_at');
     $shipSmsId = OrderShipmentService::meta($order, '_baji_ship_sms_id');
+    $shipOwnerSmsState = OrderShipmentService::meta($order, '_baji_ship_owner_sms_state');
+    $shipOwnerSmsDate = OrderShipmentService::meta($order, '_baji_ship_owner_sms_updated_at');
+    $shipOwnerSmsId = OrderShipmentService::meta($order, '_baji_ship_owner_sms_id');
     $shipUrl = OrderShipmentService::trackingUrl($shipCarrier, $shipTracking);
     $shipBy = OrderShipmentService::meta($order, '_baji_ship_handover_by');
     $actualCostRaw = OrderShipmentService::meta($order, '_baji_ship_actual_cost_toman');
@@ -260,6 +263,18 @@ if ($viewId > 0):
             <?php if ($shipSmsDate !== ''): ?><br><span class="shipment-small">آخرین بررسی: <?= e(ordersFormatDate($shipSmsDate)) ?></span><?php endif; ?>
             <?php if ($shipSmsId !== ''): ?><br><span class="shipment-small">شناسه پیامک پنل: <?= e($shipSmsId) ?></span><?php endif; ?>
           </div>
+          <div class="shipment-sms-state"><i class="fas fa-user-shield" aria-hidden="true"></i> رونوشت مدیر (09111599908): <strong><?= e(OrderShipmentService::smsLabel($shipOwnerSmsState)) ?></strong>
+            <?php if ($shipOwnerSmsDate !== ''): ?><br><span class="shipment-small">آخرین بررسی: <?= e(ordersFormatDate($shipOwnerSmsDate)) ?></span><?php endif; ?>
+            <?php if ($shipOwnerSmsId !== ''): ?><br><span class="shipment-small">شناسه پیامک مدیر: <?= e($shipOwnerSmsId) ?></span><?php endif; ?>
+          </div>
+          <?php if ($shipOwnerSmsState === 'failed' && $shipCanEdit): ?>
+          <form method="post" action="order_ship.php" onsubmit="return confirm('فقط رونوشت پیامک مدیر دوباره ارسال شود؟ پیامک مشتری تکرار نخواهد شد.')">
+            <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
+            <input type="hidden" name="action" value="retry_owner_sms">
+            <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
+            <button class="shipment-sms-retry" type="submit"><i class="fas fa-rotate-right" aria-hidden="true"></i> تلاش مجدد رونوشت مدیر</button>
+          </form>
+          <?php endif; ?>
           <?php if (in_array($shipSmsState, ['failed','no_phone'], true) && $shipCanEdit): ?>
           <form method="post" action="order_ship.php" onsubmit="return confirm('پیامک کد رهگیری این سفارش دوباره برای مشتری ارسال شود؟')">
             <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
@@ -270,7 +285,7 @@ if ($viewId > 0):
           <?php endif; ?>
           <?php endif; ?>
           <?php if ($shipCanEdit): ?>
-          <form method="post" action="order_ship.php" class="shipment-form" style="margin-top:1rem" onsubmit="return confirm('اطلاعات ارسال ثبت شود، وضعیت سفارش تکمیل شود و پیامک حاوی کد رهگیری به مشتری ارسال شود؟')">
+          <form method="post" action="order_ship.php" class="shipment-form" style="margin-top:1rem" onsubmit="return confirm('اطلاعات ارسال ثبت شود، سفارش تکمیل شود و پیامک رهگیری جداگانه به مشتری و مدیر باجی ارسال شود؟')">
             <input type="hidden" name="csrf_token" value="<?= e(csrfToken()) ?>">
             <input type="hidden" name="action" value="ship">
             <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
