@@ -214,7 +214,7 @@ class OrderShipmentService
                     $tracking, self::trackingUrl($carrier, $tracking));
             try {
                 $result = $this->sms->send($ownerPhone, $text);
-                if (!empty($result['accepted']) || !empty($result['success'])) {
+                if (array_key_exists('accepted', $result) ? (bool)$result['accepted'] : (bool)($result['success'] ?? false)) {
                     $ownerState = !empty($result['delivery_confirmed']) ? 'delivered'
                         : (!empty($result['confirmed_sent']) ? 'sent' : 'accepted');
                     $ownerId = (string)($result['message_id'] ?? '');
@@ -379,7 +379,7 @@ class OrderShipmentService
                 try {
                     $result = $this->sms->send($phone, self::message($orderId, $customerFirstName,
                         self::carrierLabel($carrier, $other), $tracking, self::trackingUrl($carrier, $tracking)));
-                    if (!empty($result['accepted']) || !empty($result['success'])) {
+                    if (array_key_exists('accepted', $result) ? (bool)$result['accepted'] : (bool)($result['success'] ?? false)) {
                         $smsState = !empty($result['delivery_confirmed']) ? 'delivered'
                             : (!empty($result['confirmed_sent']) ? 'sent' : 'accepted');
                         $messageId = (string)($result['message_id'] ?? '');
