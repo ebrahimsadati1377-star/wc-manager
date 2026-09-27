@@ -9,8 +9,8 @@ class OrderShipmentService
     private WooCommerceClient $wc;
     private IPPanelClient $sms;
     private const OWNER_SMS_MOBILE = '09111599908';
-    // Paused pending recipient-route verification; customer SMS remains enabled.
-    private const OWNER_SMS_ENABLED = false;
+    // Independent administrator copy; recipient verified as BAJI owner's handset.
+    private const OWNER_SMS_ENABLED = true;
 
     private const CARRIERS = [
         'post_pishtaz' => 'پست پیشتاز',
