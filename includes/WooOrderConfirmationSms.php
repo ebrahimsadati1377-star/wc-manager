@@ -76,8 +76,8 @@ final class WooOrderConfirmationSms
             . "سفارش شما با شماره #" . $id . " ثبت شد.\n"
             . "مبلغ سفارش: " . $total . ' ' . $unit . "\n"
             . $paymentText . "\n\n"
-            . "برای مشاهده وضعیت سفارش وارد حساب کاربری خود شوید:\n"
-            . "bajistyle.ir\n\n"
+            . "برای مشاهده وضعیت و جزئیات سفارش وارد حساب کاربری خود شوید:\n"
+            . "https://bajistyle.ir/my-account/?tab=orders\n\n"
             . "باجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
     }
 
