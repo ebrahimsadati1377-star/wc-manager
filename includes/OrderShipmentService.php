@@ -8,6 +8,7 @@ class OrderShipmentService
 {
     private WooCommerceClient $wc;
     private IPPanelClient $sms;
+    private const OWNER_SMS_MOBILE = '09111599908';
 
     private const CARRIERS = [
         'post_pishtaz' => 'پست پیشتاز',
@@ -135,6 +136,7 @@ class OrderShipmentService
             'sending', 'unknown' => 'نیازمند بررسی نتیجه پیامک؛ ارسال مجدد خودکار غیرفعال است',
             'failed' => 'پیامک ناموفق؛ امکان تلاش مجدد',
             'no_phone' => 'شماره معتبر برای پیامک ثبت نشده',
+            'same_recipient' => 'شماره مدیر و مشتری یکسان است؛ پیامک دوباره ارسال نشد',
             default => 'هنوز پیامک ارسال نشده',
         };
     }
@@ -182,13 +184,74 @@ class OrderShipmentService
             . "bajistyle.ir\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
     }
 
+
     /**
-     * $action: ship or retry_sms. Never retries accepted/uncertain sends.
+     * Sends the owner's independent copy. Customer and owner results are
+     * persisted separately; an uncertain network error never triggers a retry.
+     */
+    private function notifyOwner(int $orderId, string $customerFirstName, string $customerPhone,
+        string $carrier, string $other, string $tracking, string $customerState): array
+    {
+        $ownerState = 'failed';
+        $ownerId = '';
+        $ownerPhone = self::OWNER_SMS_MOBILE;
+        $digits = static function(string $phone): string {
+            $number = preg_replace('/\D+/', '', $phone);
+            if (str_starts_with($number, '0098')) $number = substr($number, 2);
+            if (str_starts_with($number, '98') && strlen($number) === 12) $number = '0' . substr($number, 2);
+            if (strlen($number) === 10 && str_starts_with($number, '9')) $number = '0' . $number;
+            return $number;
+        };
+        if (self::validMobile($customerPhone) && $digits($customerPhone) === $digits($ownerPhone)) {
+            $ownerState = 'same_recipient';
+        } else {
+            $name = trim($customerFirstName) ?: 'مشتری بدون نام';
+            $text = "رونوشت اطلاع‌رسانی ارسال | مدیر باجی\n"
+                . "مشتری: " . $name . "\n"
+                . "موبایل مشتری: " . ($customerPhone !== '' ? $customerPhone : 'ثبت نشده') . "\n"
+                . "وضعیت پیامک مشتری: " . self::smsLabel($customerState) . "\n\n"
+                . self::message($orderId, $customerFirstName, self::carrierLabel($carrier, $other),
+                    $tracking, self::trackingUrl($carrier, $tracking));
+            try {
+                $result = $this->sms->send($ownerPhone, $text);
+                if (!empty($result['accepted']) || !empty($result['success'])) {
+                    $ownerState = !empty($result['delivery_confirmed']) ? 'delivered'
+                        : (!empty($result['confirmed_sent']) ? 'sent' : 'accepted');
+                    $ownerId = (string)($result['message_id'] ?? '');
+                }
+            } catch (Throwable $ex) {
+                $error = (string)$ex->getMessage();
+                $ownerState = preg_match('/request failed|timeout|timed out|relay request failed/i', $error)
+                    ? 'unknown' : 'failed';
+                error_log('[wc-manager] owner shipment SMS error order=' . $orderId .
+                    ' state=' . $ownerState . ' error=' . $error);
+            }
+        }
+        $logged = $this->update($orderId, [
+            'meta_data' => self::metaItems([
+                '_baji_ship_owner_sms_state' => $ownerState,
+                '_baji_ship_owner_sms_id' => $ownerId,
+                '_baji_ship_owner_sms_updated_at' => gmdate('c'),
+            ]),
+        ]);
+        if (!empty($logged['error'])) {
+            logActivity('shipment_owner_sms_log_error', 'order:' . $orderId, 'state=' . $ownerState);
+            return ['type'=>'warning', 'message'=>'وضعیت رونوشت مدیر در سفارش ذخیره نشد؛ قبل از ارسال دوباره، پنل پیامک بررسی شود.'];
+        }
+        logActivity('shipment_owner_sms', 'order:' . $orderId, 'state=' . $ownerState . ' message_id=' . $ownerId);
+        return [
+            'type' => in_array($ownerState, ['accepted','sent','delivered','same_recipient'], true) ? 'success' : 'warning',
+            'message' => 'رونوشت مدیر (09111599908): ' . self::smsLabel($ownerState),
+        ];
+    }
+
+    /**
+     * $action: ship, retry_sms or retry_owner_sms. Never retries accepted/uncertain sends.
      * Returns ['type'=>'success|warning|danger', 'message'=>...].
      */
     public function process(int $orderId, string $action, string $carrier = '', string $other = '', string $tracking = ''): array
     {
-        if ($orderId < 1 || !in_array($action, ['ship', 'retry_sms'], true)) {
+        if ($orderId < 1 || !in_array($action, ['ship', 'retry_sms', 'retry_owner_sms'], true)) {
             return ['type' => 'danger', 'message' => 'درخواست ارسال نامعتبر است.'];
         }
         $lock = @fopen(sys_get_temp_dir() . '/baji-shipment-' . $orderId . '.lock', 'c');
@@ -219,6 +282,25 @@ class OrderShipmentService
             $savedOther = self::meta($order, '_baji_ship_other');
             $savedTracking = self::meta($order, '_baji_ship_tracking');
             $savedSmsState = self::meta($order, '_baji_ship_sms_state');
+            $savedOwnerSmsState = self::meta($order, '_baji_ship_owner_sms_state');
+
+            if ($action === 'retry_owner_sms') {
+                if ($savedCarrier === '' || $savedTracking === '') {
+                    return ['type'=>'danger', 'message'=>'ابتدا اطلاعات ارسال سفارش را ثبت کنید.'];
+                }
+                if ($savedOwnerSmsState !== 'failed') {
+                    return ['type'=>'warning', 'message'=>'رونوشت مدیر قبلاً پذیرفته شده یا وضعیت آن نامشخص است؛ برای جلوگیری از تکرار، مجدد ارسال نشد.'];
+                }
+                $reserved = $this->update($orderId, ['meta_data'=>self::metaItems([
+                    '_baji_ship_owner_sms_state'=>'sending',
+                    '_baji_ship_owner_sms_updated_at'=>gmdate('c'),
+                ])]);
+                if (!empty($reserved['error'])) {
+                    return ['type'=>'danger', 'message'=>'ثبت تلاش مجدد پیامک مدیر در ووکامرس ناموفق بود.'];
+                }
+                return $this->notifyOwner($orderId, $customerFirstName, $phone,
+                    $savedCarrier, $savedOther, $savedTracking, $savedSmsState);
+            }
 
             if ($action === 'retry_sms') {
                 if ($savedCarrier === '' || $savedTracking === '') {
@@ -266,6 +348,9 @@ class OrderShipmentService
                     '_baji_ship_sms_key' => $fingerprint,
                     '_baji_ship_sms_id' => '',
                     '_baji_ship_sms_updated_at' => gmdate('c'),
+                    '_baji_ship_owner_sms_state' => 'sending',
+                    '_baji_ship_owner_sms_id' => '',
+                    '_baji_ship_owner_sms_updated_at' => gmdate('c'),
                 ];
                 $saved = $this->update($orderId, [
                     'status' => 'completed',
@@ -288,32 +373,25 @@ class OrderShipmentService
                 }
             }
 
-            if (!$phoneValid) {
-                return ['type' => 'warning', 'message' => 'اطلاعات ارسال ثبت و سفارش تکمیل شد، اما مشتری شماره موبایل معتبر ندارد؛ پیامک ارسال نشد.'];
-            }
-
-            $smsState = 'failed';
+            $smsState = $phoneValid ? 'failed' : 'no_phone';
             $messageId = '';
-            $feedback = '';
-            try {
-                $result = $this->sms->send($phone, self::message($orderId, $customerFirstName, self::carrierLabel($carrier, $other), $tracking, self::trackingUrl($carrier, $tracking)));
-                $accepted = (bool)($result['accepted'] ?? $result['success'] ?? false);
-                if (!$accepted) {
-                    $feedback = 'پنل پیامک درخواست را نپذیرفت.';
-                } else {
-                    $smsState = !empty($result['delivery_confirmed']) ? 'delivered'
-                        : (!empty($result['confirmed_sent']) ? 'sent' : 'accepted');
-                    $messageId = (string)($result['message_id'] ?? '');
-                    $feedback = self::smsLabel($smsState);
+            if ($phoneValid) {
+                try {
+                    $result = $this->sms->send($phone, self::message($orderId, $customerFirstName,
+                        self::carrierLabel($carrier, $other), $tracking, self::trackingUrl($carrier, $tracking)));
+                    if (!empty($result['accepted']) || !empty($result['success'])) {
+                        $smsState = !empty($result['delivery_confirmed']) ? 'delivered'
+                            : (!empty($result['confirmed_sent']) ? 'sent' : 'accepted');
+                        $messageId = (string)($result['message_id'] ?? '');
+                    }
+                } catch (Throwable $ex) {
+                    $error = (string)$ex->getMessage();
+                    $smsState = preg_match('/request failed|timeout|timed out|relay request failed/i', $error)
+                        ? 'unknown' : 'failed';
+                    error_log('[wc-manager] shipment SMS failure order=' . $orderId .
+                        ' state=' . $smsState . ' error=' . $error);
                 }
-            } catch (Throwable $ex) {
-                $error = (string)$ex->getMessage();
-                // Transport timeouts may have queued a message before the response failed.
-                $smsState = preg_match('/request failed|timeout|timed out|relay request failed/i', $error) ? 'unknown' : 'failed';
-                $feedback = self::smsLabel($smsState);
-                error_log('[wc-manager] shipment SMS failure order=' . $orderId . ' state=' . $smsState . ' error=' . $error);
             }
-
             $logged = $this->update($orderId, [
                 'meta_data' => self::metaItems([
                     '_baji_ship_sms_state' => $smsState,
@@ -322,15 +400,32 @@ class OrderShipmentService
                     '_baji_ship_sms_updated_at' => gmdate('c'),
                 ]),
             ]);
-            if (!empty($logged['error'])) {
+            $customerLogError = !empty($logged['error']);
+            if ($customerLogError) {
                 logActivity('shipment_sms_log_error', 'order:' . $orderId, $smsState);
-                return ['type' => 'warning', 'message' => 'اطلاعات ارسال ثبت شد اما ذخیره نتیجه پیامک در سفارش ناموفق بود؛ پیش از ارسال دوباره، وضعیت پنل پیامک را بررسی کنید.'];
+            } else {
+                logActivity('shipment_sms', 'order:' . $orderId, 'state=' . $smsState . ' message_id=' . $messageId);
             }
-            logActivity('shipment_sms', 'order:' . $orderId, 'state=' . $smsState . ' message_id=' . $messageId);
-            if (in_array($smsState, ['delivered', 'sent', 'accepted'], true)) {
-                return ['type' => 'success', 'message' => 'اطلاعات ارسال ذخیره شد و وضعیت سفارش «تکمیل‌شده» است. ' . $feedback];
+            $customerFeedback = 'پیامک مشتری: ' . self::smsLabel($smsState);
+            if ($customerLogError) {
+                $customerFeedback .= '؛ ثبت نتیجه در ووکامرس ناموفق بود و ارسال مجدد نیاز به بررسی پنل دارد.';
             }
-            return ['type' => 'warning', 'message' => 'اطلاعات ارسال ذخیره شد و سفارش تکمیل‌شده است، اما ' . $feedback . '.'];
+            // A customer-only retry must never resend the owner's accepted copy.
+            if ($action === 'retry_sms') {
+                return ['type' => $customerLogError || !in_array($smsState, ['accepted','sent','delivered'], true)
+                    ? 'warning' : 'success', 'message' => $customerFeedback];
+            }
+
+            // The owner receives a separate copy even if the customer number is invalid.
+            $ownerOutcome = $this->notifyOwner($orderId, $customerFirstName, $phone,
+                $carrier, $other, $tracking, $smsState);
+            return [
+                'type' => $customerLogError
+                    || !in_array($smsState, ['accepted','sent','delivered'], true)
+                    || $ownerOutcome['type'] !== 'success' ? 'warning' : 'success',
+                'message' => 'اطلاعات ارسال ذخیره شد و سفارش تکمیل‌شده است. '
+                    . $customerFeedback . ' | ' . $ownerOutcome['message'],
+            ];
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
