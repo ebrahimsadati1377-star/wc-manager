@@ -9,6 +9,8 @@ class OrderShipmentService
     private WooCommerceClient $wc;
     private IPPanelClient $sms;
     private const OWNER_SMS_MOBILE = '09111599908';
+    // Paused pending recipient-route verification; customer SMS remains enabled.
+    private const OWNER_SMS_ENABLED = false;
 
     private const CARRIERS = [
         'post_pishtaz' => 'پست پیشتاز',
@@ -137,6 +139,7 @@ class OrderShipmentService
             'failed' => 'پیامک ناموفق؛ امکان تلاش مجدد',
             'no_phone' => 'شماره معتبر برای پیامک ثبت نشده',
             'same_recipient' => 'شماره مدیر و مشتری یکسان است؛ پیامک دوباره ارسال نشد',
+            'paused' => 'ارسال رونوشت مدیر موقتاً متوقف است؛ مقصد در حال بررسی است',
             default => 'هنوز پیامک ارسال نشده',
         };
     }
@@ -192,6 +195,17 @@ class OrderShipmentService
     private function notifyOwner(int $orderId, string $customerFirstName, string $customerPhone,
         string $carrier, string $other, string $tracking, string $customerState): array
     {
+        if (!self::OWNER_SMS_ENABLED) {
+            $saved = $this->update($orderId, ['meta_data'=>self::metaItems([
+                '_baji_ship_owner_sms_state'=>'paused',
+                '_baji_ship_owner_sms_id'=>'',
+                '_baji_ship_owner_sms_updated_at'=>gmdate('c'),
+            ])]);
+            logActivity('shipment_owner_sms_paused','order:'.$orderId,'Recipient verification pending');
+            return ['type'=>'warning','message'=>!empty($saved['error'])
+                ? 'ارسال رونوشت مدیر متوقف است، ولی ذخیره وضعیت توقف ناموفق بود.'
+                : 'رونوشت مدیر موقتاً برای بررسی مسیر گیرنده متوقف است.'];
+        }
         $ownerState = 'failed';
         $ownerId = '';
         $ownerPhone = self::OWNER_SMS_MOBILE;
