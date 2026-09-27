@@ -169,9 +169,14 @@ class OrderShipmentService
         return $this->wc->put('orders/' . $orderId, $fields);
     }
 
-    private static function message(int $orderId, string $carrierLabel, string $tracking, string $trackUrl = ''): string
+    private static function message(int $orderId, string $customerFirstName, string $carrierLabel, string $tracking, string $trackUrl = ''): string
     {
-        return "باجی 🤍\nسفارش #" . $orderId . " شما با " . $carrierLabel . " ارسال شد.\n"
+        $firstName = trim((string)preg_replace('/[\\x00-\\x1f\\x7f]+/u', ' ', $customerFirstName));
+        $firstName = trim((string)preg_replace('/\\s+/u', ' ', $firstName));
+        $firstName = mb_substr($firstName, 0, 40, 'UTF-8');
+        $greeting = $firstName !== '' ? $firstName . ' عزیز 🤍' : 'مشتری عزیز 🤍';
+
+        return "باجی 🤍\n" . $greeting . "\n\nسفارش #" . $orderId . " شما با " . $carrierLabel . " ارسال شد.\n"
             . "کد رهگیری: " . $tracking . "\n"
             . "پیگیری مرسوله: " . ($trackUrl !== '' ? $trackUrl : 'از طریق شرکت حمل‌ونقل') . "\n"
             . "bajistyle.ir\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
@@ -205,6 +210,10 @@ class OrderShipmentService
 
             $billing = (array)($order['billing'] ?? []);
             $phone = trim((string)($billing['phone'] ?? ''));
+            $customerFirstName = trim((string)($billing['first_name'] ?? ''));
+            if ($customerFirstName === '') {
+                $customerFirstName = trim((string)($order['shipping']['first_name'] ?? ''));
+            }
             $phoneValid = self::validMobile($phone);
             $savedCarrier = self::meta($order, '_baji_ship_carrier');
             $savedOther = self::meta($order, '_baji_ship_other');
@@ -287,7 +296,7 @@ class OrderShipmentService
             $messageId = '';
             $feedback = '';
             try {
-                $result = $this->sms->send($phone, self::message($orderId, self::carrierLabel($carrier, $other), $tracking, self::trackingUrl($carrier, $tracking)));
+                $result = $this->sms->send($phone, self::message($orderId, $customerFirstName, self::carrierLabel($carrier, $other), $tracking, self::trackingUrl($carrier, $tracking)));
                 $accepted = (bool)($result['accepted'] ?? $result['success'] ?? false);
                 if (!$accepted) {
                     $feedback = 'پنل پیامک درخواست را نپذیرفت.';
