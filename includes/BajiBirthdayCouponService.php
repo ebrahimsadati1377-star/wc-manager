@@ -102,7 +102,8 @@ final class BajiBirthdayCouponService
 
         $tehran = $today->setTimezone(new DateTimeZone('Asia/Tehran'));
         $campaignYear = (int)$tehran->format('Y');
-        $expires = $tehran->modify('+7 days')->setTime(23, 59, 59);
+        // Seven calendar days counting the birthday itself as day one.
+        $expires = $tehran->modify('+6 days')->setTime(23, 59, 59);
         $expiryUtc = $expires->setTimezone(new DateTimeZone('UTC'));
         $code = 'BAJIBD-' . substr((string)$campaignYear, -2) . '-'
             . strtoupper(substr(hash_hmac('sha256', $phone . ':' . $campaignYear, $this->secret()), 0, 12));
