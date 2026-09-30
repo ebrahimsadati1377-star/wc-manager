@@ -34,11 +34,15 @@ final class BajiBirthdayCouponService
 
     private function secret(): string
     {
+        static $cached = null;
+        if ($cached !== null) return $cached;
         $secret = (string)getSetting('baji_birthday_coupon_secret', '');
-        if ($secret !== '') return $secret;
-        $secret = bin2hex(random_bytes(32));
-        setSetting('baji_birthday_coupon_secret', $secret);
-        return $secret;
+        if ($secret === '') {
+            $secret = bin2hex(random_bytes(32));
+            setSetting('baji_birthday_coupon_secret', $secret);
+        }
+        $cached = $secret;
+        return $cached;
     }
 
     private static function couponMeta(array $coupon, string $key): string
