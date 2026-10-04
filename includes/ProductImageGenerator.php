@@ -37,10 +37,10 @@ class ProductImageGenerator
         $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
         if ($openaiKey === '') $openaiKey = trim((string)getSetting('openai_api_key', ''));
         if ($openaiKey === '' && function_exists('wcAgentOpenAiKeyFromSession')) $openaiKey = wcAgentOpenAiKeyFromSession();
-        $provider = $arenaKey !== '' ? 'arena' : 'openai';
-        if ($arenaKey === '' && $openaiKey === '') {
-            throw new RuntimeException('ARENA_API_KEY or OPENAI_API_KEY must be configured on the server.');
-        }
+        $provider = trim((string)($arguments['provider'] ?? getSetting('product_image_provider', 'arena'))) ?: 'arena';
+        if (!in_array($provider, ['arena','openai'], true)) throw new RuntimeException('Image provider must be arena or openai.');
+        if ($provider === 'arena' && $arenaKey === '') throw new RuntimeException('Arena API Key is not configured.');
+        if ($provider === 'openai' && $openaiKey === '') throw new RuntimeException('OpenAI API Key is not configured.');
 
         $jobs = [];
         for ($index = 1; $index <= $count; $index++) {
@@ -77,11 +77,11 @@ class ProductImageGenerator
         $openaiKey = trim((string)getenv('OPENAI_API_KEY'));
         if ($openaiKey === '') $openaiKey = trim((string)getSetting('openai_api_key', ''));
         if ($openaiKey === '' && function_exists('wcAgentOpenAiKeyFromSession')) $openaiKey = wcAgentOpenAiKeyFromSession();
-        if ($arenaKey === '' && $openaiKey === '') {
-            throw new RuntimeException('ARENA_API_KEY or OPENAI_API_KEY must be configured on the server.');
-        }
+        $provider = trim((string)($arguments['provider'] ?? getSetting('product_image_provider', 'arena'))) ?: 'arena';
+        if (!in_array($provider, ['arena','openai'], true)) throw new RuntimeException('Image provider must be arena or openai.');
+        if ($provider === 'arena' && $arenaKey === '') throw new RuntimeException('Arena API Key is not configured.');
+        if ($provider === 'openai' && $openaiKey === '') throw new RuntimeException('OpenAI API Key is not configured.');
 
-        $provider = $arenaKey !== '' ? 'arena' : 'openai';
         $job = $provider === 'arena'
             ? $this->runArenaIndependentJob($arenaKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count)
             : $this->runIndependentJob($openaiKey, $productName, $productReference, $faceReference, $aspectRatio, $instructions, $wordpressUpload, $index, $count);
@@ -325,16 +325,22 @@ STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split scree
 
     private function cropToExactAspect(string $base64, string $aspectRatio): string
     {
-        if (!function_exists('imagecreatefromstring') || !function_exists('imagepng')) throw new RuntimeException('PHP GD is required to enforce exact ' . $aspectRatio . ' output files.');
-        $binary = base64_decode($base64, true); $src = $binary !== false ? @imagecreatefromstring($binary) : false;
-        if ($src === false) throw new RuntimeException('Could not decode generated image for aspect-ratio crop.');
-        $w=imagesx($src); $h=imagesy($src); [$rw,$rh]=array_map('intval',explode(':',$aspectRatio,2)); $target=$rw/$rh; $current=$w/$h;
-        if ($current > $target) { $cropH=$h; $cropW=max(1,(int)round($h*$target)); $x=(int)floor(($w-$cropW)/2); $y=0; }
-        else { $cropW=$w; $cropH=max(1,(int)round($w/$target)); $x=0; $y=(int)floor(($h-$cropH)/2); }
-        $cropped=imagecrop($src,['x'=>$x,'y'=>$y,'width'=>$cropW,'height'=>$cropH]); imagedestroy($src);
-        if ($cropped===false) throw new RuntimeException('Could not crop generated image to exact ' . $aspectRatio . '.');
-        ob_start(); imagepng($cropped,null,6); $png=ob_get_clean(); imagedestroy($cropped);
-        if (!is_string($png)||$png==='') throw new RuntimeException('Could not encode cropped image.');
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagepng') || !function_exists('imagecopyresampled')) {
+            throw new RuntimeException('PHP GD is required to normalize product images.');
+        }
+        $binary=base64_decode($base64,true); $src=$binary!==false?@imagecreatefromstring($binary):false;
+        if($src===false) throw new RuntimeException('Could not decode generated image.');
+        $w=imagesx($src);$h=imagesy($src);[$rw,$rh]=array_map('intval',explode(':',$aspectRatio,2));$target=$rw/$rh;$current=$w/$h;
+        if($current>$target){$cropH=$h;$cropW=max(1,(int)round($h*$target));$x=(int)floor(($w-$cropW)/2);$y=0;}
+        else{$cropW=$w;$cropH=max(1,(int)round($w/$target));$x=0;$y=(int)floor(($h-$cropH)/2);}
+        $cropped=imagecrop($src,['x'=>$x,'y'=>$y,'width'=>$cropW,'height'=>$cropH]);imagedestroy($src);
+        if($cropped===false) throw new RuntimeException('Could not crop generated image.');
+        [$outW,$outH]=$aspectRatio==='16:9'?[1920,1080]:($aspectRatio==='1:1'?[1536,1536]:[1080,1920]);
+        $canvas=imagecreatetruecolor($outW,$outH);if($canvas===false){imagedestroy($cropped);throw new RuntimeException('Could not allocate final image canvas.');}
+        $ok=imagecopyresampled($canvas,$cropped,0,0,0,0,$outW,$outH,imagesx($cropped),imagesy($cropped));imagedestroy($cropped);
+        if(!$ok){imagedestroy($canvas);throw new RuntimeException('Could not resize final image.');}
+        ob_start();imagepng($canvas,null,6);$png=ob_get_clean();imagedestroy($canvas);
+        if(!is_string($png)||$png==='')throw new RuntimeException('Could not encode final image.');
         return base64_encode($png);
     }
 }

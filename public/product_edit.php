@@ -64,6 +64,8 @@ $attrRes = $wc->getAttributes();
 $globalAttributes = $attrRes['error'] ? [] : $attrRes['body'];
 
 $selectedCategoryIds = array_map(fn($c) => (int)$c['id'], $product['categories'] ?? []);
+$hasBajiFaceReference = trim((string)getSetting('baji_face_reference_url', '')) !== '';
+$productImageProvider = (string)getSetting('product_image_provider', 'arena');
 
 $pageTitle = $isEdit ? 'ویرایش محصول' : 'افزودن محصول جدید';
 require __DIR__ . '/partials/header.php';
@@ -315,16 +317,31 @@ require __DIR__ . '/partials/header.php';
       <div class="card product-edit-card mb-4">
         <div class="card-header fw-bold">تصاویر محصول</div>
         <div class="card-body">
-          <div class="border rounded p-3 mb-3 bg-light">
-            <label class="form-label fw-bold">ساخت هوشمند محصول BAJI</label>
+          <div class="border rounded p-3 mb-3 bg-light" id="aiWorkflowPanel">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+              <label class="form-label fw-bold mb-0">Workflow حرفه‌ای BAJI</label>
+              <span class="badge text-bg-dark" id="aiProviderBadge"><?= e(strtoupper($productImageProvider)) ?></span>
+            </div>
+            <div class="small text-muted mb-2">ورودی → تحلیل → ۷ عکس مستقل → QC → SEO → Preview → انتشار</div>
             <label class="form-label small mb-1">عکس خام محصول</label>
             <input type="file" id="aiRawProductImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-2">
             <label class="form-label small mb-1">چهره مرجع BAJI</label>
             <input type="file" id="aiFaceReferenceImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-1">
-            <div class="form-text mb-2"><?= $hasBajiFaceReference ? 'چهره مرجع ذخیره شده است؛ فقط برای تغییر آن فایل جدید انتخاب کن.' : 'یک بار چهره مرجع BAJI را انتخاب کن؛ برای دفعات بعد ذخیره می‌شود.' ?></div>
-            <textarea id="aiProductNotes" class="form-control form-control-sm mb-2" rows="3" placeholder="اطلاعات قطعی مثل جنس، سایز، رنگ، قد و نکات شستشو را بنویس (اختیاری)"></textarea>
-            <button type="button" class="btn btn-dark w-100" id="aiBuildProductBtn">✨ ساخت ۷ عکس + سئو + انتشار</button>
-            <div id="aiBuildStatus" class="small mt-2 text-muted">آماده دریافت عکس خام.</div>
+            <div class="form-text mb-2"><?= $hasBajiFaceReference ? 'چهره مرجع ذخیره است؛ فقط برای تغییر آن فایل جدید انتخاب کن.' : 'بار اول چهره مرجع BAJI را انتخاب کن.' ?></div>
+            <textarea id="aiProductNotes" class="form-control form-control-sm mb-2" rows="3" placeholder="فقط اطلاعات قطعی: جنس، سایز، رنگ، قد، شستشو و..."></textarea>
+            <button type="button" class="btn btn-dark w-100 mb-2" id="aiWorkflowRunBtn">✨ اجرای Workflow تا پیش‌نمایش</button>
+            <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" id="aiAdoptGalleryBtn">استفاده از ۷ عکس فعلی گالری</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-2" id="aiWorkflowResetBtn">شروع Workflow جدید</button>
+            <div class="progress mb-2" style="height:8px"><div class="progress-bar" id="aiWorkflowProgress" style="width:0%"></div></div>
+            <div id="aiBuildStatus" class="small mb-2 text-muted">در حال بررسی آمادگی سیستم...</div>
+            <div class="row g-2">
+              <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiAnalyzeBtn" disabled>۱. تحلیل</button></div>
+              <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiImagesBtn" disabled>۲. ساخت ۷ عکس</button></div>
+              <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiQcBtn" disabled>۳. QC</button></div>
+              <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiSeoBtn" disabled>۴. SEO</button></div>
+              <div class="col-12"><button type="button" class="btn btn-sm btn-outline-success w-100" id="aiPreviewBtn" disabled>۵. پیش‌نمایش نهایی</button></div>
+            </div>
+            <div id="aiWorkflowPreview" class="mt-3 d-none"></div>
           </div>
           <input type="hidden" id="f_seo_title">
           <input type="hidden" id="f_meta_description">
