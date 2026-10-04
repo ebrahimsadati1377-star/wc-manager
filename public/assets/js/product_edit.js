@@ -100,41 +100,89 @@
   renderGallery();
 
   // ---------------------------------------------------------------
-  // BAJI AI product builder: raw photo -> SEO + 7 independent images
+  // BAJI Professional Product Workflow V2
+  // input -> analysis -> 7 images -> technical QC -> SEO -> preview -> publish
   // ---------------------------------------------------------------
-  const aiBuildBtn = document.getElementById('aiBuildProductBtn');
   const aiRawInput = document.getElementById('aiRawProductImage');
   const aiFaceInput = document.getElementById('aiFaceReferenceImage');
   const aiStatus = document.getElementById('aiBuildStatus');
+  const aiProgress = document.getElementById('aiWorkflowProgress');
+  const aiProviderBadge = document.getElementById('aiProviderBadge');
+  const aiRunBtn = document.getElementById('aiWorkflowRunBtn');
+  const aiResetBtn = document.getElementById('aiWorkflowResetBtn');
+  const aiAdoptBtn = document.getElementById('aiAdoptGalleryBtn');
+  const aiAnalyzeBtn = document.getElementById('aiAnalyzeBtn');
+  const aiImagesBtn = document.getElementById('aiImagesBtn');
+  const aiQcBtn = document.getElementById('aiQcBtn');
+  const aiSeoBtn = document.getElementById('aiSeoBtn');
+  const aiPreviewBtn = document.getElementById('aiPreviewBtn');
+  const aiPreviewBox = document.getElementById('aiWorkflowPreview');
+
+  let workflowJobId = null;
+  let workflowBusy = false;
+  const workflowStorageKey = 'baji_product_workflow_v2_' + (window.PRODUCT_ID || 'new');
 
   async function aiJson(url, payload) {
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.CSRF_TOKEN },
-      body: JSON.stringify(payload)
+      headers: {'Content-Type':'application/json','X-CSRF-Token':window.CSRF_TOKEN},
+      body: JSON.stringify(payload || {})
     });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.message || 'خطای پردازش هوشمند');
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) throw new Error(data.message || 'خطای Workflow');
     return data;
   }
 
-  async function aiJsonWithRetry(url, payload, attempts = 2) {
-    let lastError;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
+  async function aiJsonRetry(url, payload, attempts = 2) {
+    let last;
+    for (let i = 1; i <= attempts; i++) {
       try { return await aiJson(url, payload); }
-      catch (e) { lastError = e; if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, 1200)); }
+      catch (e) { last = e; if (i < attempts) await new Promise(r => setTimeout(r, 1200)); }
     }
-    throw lastError;
+    throw last;
   }
 
   async function uploadRawProductImage(file) {
     const fd = new FormData();
     fd.append('image', file);
     fd.append('csrf_token', window.CSRF_TOKEN);
-    const response = await fetch('ajax/upload.php', { method: 'POST', body: fd });
+    const response = await fetch('ajax/upload.php', {method:'POST',body:fd});
     const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.message || 'آپلود عکس خام ناموفق بود');
+    if (!response.ok || !data.success) throw new Error(data.message || 'آپلود عکس ناموفق بود.');
     return data.url;
+  }
+
+  function workflowStatus(message, percent = null, type = 'muted') {
+    if (aiStatus) {
+      aiStatus.textContent = message;
+      aiStatus.className = 'small mb-2 text-' + type;
+    }
+    if (aiProgress && percent !== null) {
+      aiProgress.style.width = Math.max(0, Math.min(100, Number(percent) || 0)) + '%';
+    }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    })[ch]);
+  }
+
+  function setWorkflowBusy(busy) {
+    workflowBusy = busy;
+    [aiRunBtn, aiResetBtn, aiAdoptBtn, aiAnalyzeBtn, aiImagesBtn, aiQcBtn, aiSeoBtn, aiPreviewBtn]
+      .filter(Boolean).forEach(btn => { btn.disabled = busy; });
+  }
+
+  function enableStageButtons(state) {
+    if (workflowBusy) return;
+    [aiAnalyzeBtn, aiImagesBtn, aiQcBtn, aiSeoBtn, aiPreviewBtn].filter(Boolean).forEach(btn => btn.disabled = true);
+    if (!workflowJobId || state === 'published') return;
+    aiAnalyzeBtn.disabled = false;
+    if (['analyzed','images_generating','images_ready','needs_review','qc_passed','seo_ready','preview_ready'].includes(state)) aiImagesBtn.disabled = false;
+    if (['images_ready','needs_review','qc_passed','seo_ready','preview_ready'].includes(state)) aiQcBtn.disabled = false;
+    if (['qc_passed','seo_ready','preview_ready'].includes(state)) aiSeoBtn.disabled = false;
+    if (['seo_ready','preview_ready'].includes(state)) aiPreviewBtn.disabled = false;
   }
 
   function applyAiAnalysis(a, attrs) {
@@ -145,76 +193,430 @@
     document.getElementById('f_meta_description').value = a.meta_description || '';
     document.getElementById('f_focus_keyword').value = a.focus_keyword || '';
     if (Array.isArray(a.category_ids) && a.category_ids.length) {
-      document.querySelectorAll('.cat-checkbox').forEach(cb => { cb.checked = a.category_ids.includes(parseInt(cb.value, 10)); });
+      document.querySelectorAll('.cat-checkbox').forEach(cb => {
+        cb.checked = a.category_ids.includes(parseInt(cb.value, 10));
+      });
     }
     document.getElementById('attributesWrap').innerHTML = '';
     if (Array.isArray(attrs)) attrs.forEach(attr => addAttributeRow(attr));
   }
 
-  if (aiBuildBtn) aiBuildBtn.addEventListener('click', async function () {
-    const file = aiRawInput.files[0];
-    if (!file) { alert('اول عکس خام محصول را انتخاب کنید.'); return; }
-    if (!document.getElementById('type_simple').checked) {
-      alert('انتشار هوشمند فعلاً برای محصول ساده تنظیم شده است.');
-      return;
-    }
-    if (!document.getElementById('f_regular_price').value.trim()) {
-      alert('قبل از شروع، قیمت اصلی محصول را وارد کنید.');
-      return;
-    }
-
-    aiBuildBtn.disabled = true;
-    aiStatus.className = 'small mt-2 text-muted';
+  async function runPreflight() {
     try {
-      aiStatus.textContent = '۱/۳ — در حال آپلود عکس خام و تحلیل SEO...';
-      const rawUrl = await uploadRawProductImage(file);
-      const faceFile = aiFaceInput && aiFaceInput.files ? aiFaceInput.files[0] : null;
-      const faceUrl = faceFile ? await uploadRawProductImage(faceFile) : '';
-
-      const analyzed = await aiJson('ajax/product_ai_analyze.php', {
-        image_url: rawUrl,
-        face_reference_url: faceUrl,
-        name: document.getElementById('f_name').value.trim(),
-        short_description: document.getElementById('f_short_description').value,
-        description: document.getElementById('f_description').value,
-        notes: document.getElementById('aiProductNotes').value,
-        category_ids: collectCategories().map(c => c.id)
+      const result = await aiJson('ajax/product_workflow_preflight.php', {
+        regular_price: document.getElementById('f_regular_price').value.trim(),
+        sale_price: document.getElementById('f_sale_price').value.trim()
       });
+      const p = result.preflight || {};
+      const provider = p.provider || {};
+      const selected = provider.selected || 'arena';
+      if (aiProviderBadge) aiProviderBadge.textContent = selected.toUpperCase();
 
-      applyAiAnalysis(analyzed.analysis, analyzed.attributes);
-      images = [];
+      const q = p.face_reference_quality || {};
+      if (q.reference_pass === false && q.width) {
+        workflowStatus('هشدار: چهره مرجع BAJI کم‌کیفیت است (' + q.width + '×' + q.height + '). بهتر است نسخه اصلی و باکیفیت جایگزین شود.', 0, 'warning');
+        return;
+      }
+
+      if (provider.available && !provider.available[selected]) {
+        workflowStatus(
+          selected.toUpperCase() + ' هنوز آماده نیست. فعلاً ۷ عکس ساخته‌شده در ChatGPT را در گالری بگذار و «استفاده از ۷ عکس فعلی گالری» را بزن.',
+          0,
+          'warning'
+        );
+        return;
+      }
+      workflowStatus('سیستم آماده اجرای Workflow است.', 0, 'success');
+    } catch (e) {
+      workflowStatus('Preflight: ' + e.message, 0, 'danger');
+    }
+  }
+
+  async function startWorkflow() {
+    const file = aiRawInput?.files?.[0] || null;
+    if (!file) throw new Error('اول عکس خام محصول را انتخاب کن.');
+    if (!document.getElementById('type_simple').checked) throw new Error('Workflow حرفه‌ای فعلاً برای محصول ساده فعال است.');
+
+    const regular = document.getElementById('f_regular_price').value.trim();
+    if (!regular) throw new Error('قیمت اصلی را وارد کن.');
+
+    workflowStatus('آپلود عکس خام و ساخت Job...', 5, 'primary');
+    const rawUrl = await uploadRawProductImage(file);
+    const faceFile = aiFaceInput?.files?.[0] || null;
+    const faceUrl = faceFile ? await uploadRawProductImage(faceFile) : '';
+
+    const result = await aiJson('ajax/product_workflow_start.php', {
+      product_id: window.PRODUCT_ID || 0,
+      product_name: document.getElementById('f_name').value.trim() || 'محصول جدید باجی',
+      raw_product_image_url: rawUrl,
+      face_reference_url: faceUrl,
+      regular_price: regular,
+      sale_price: document.getElementById('f_sale_price').value.trim(),
+      stock_quantity: document.getElementById('f_manage_stock').checked
+        ? document.getElementById('f_stock_quantity').value.trim() : '',
+      notes: document.getElementById('aiProductNotes').value.trim(),
+      category_ids: collectCategories().map(c => c.id),
+      short_description: document.getElementById('f_short_description').value,
+      description: document.getElementById('f_description').value
+    });
+
+    workflowJobId = parseInt(result.job.id, 10);
+    sessionStorage.setItem(workflowStorageKey, String(workflowJobId));
+    enableStageButtons('draft_input');
+    workflowStatus('Job ساخته شد. آماده تحلیل.', 8, 'primary');
+    return workflowJobId;
+  }
+
+  async function ensureWorkflowStarted() {
+    if (!workflowJobId) return startWorkflow();
+    return workflowJobId;
+  }
+
+  async function analyzeWorkflow() {
+    await ensureWorkflowStarted();
+    workflowStatus('۱/۵ — تحلیل محصول و استخراج اطلاعات واقعی...', 15, 'primary');
+    const result = await aiJson('ajax/product_workflow_analyze.php', {job_id: workflowJobId});
+    applyAiAnalysis(result.analysis || {}, result.attributes || []);
+    if (result.analysis?.analysis_warning) {
+      workflowStatus(result.analysis.analysis_warning, 20, 'warning');
+    } else {
+      workflowStatus('تحلیل کامل شد؛ مشخصات نامعلوم حدس زده نمی‌شوند.', 20, 'success');
+    }
+    enableStageButtons('analyzed');
+    return result.analysis;
+  }
+
+  async function generateWorkflowImages() {
+    await ensureWorkflowStarted();
+    images = [];
+    renderGallery();
+
+    for (let i = 1; i <= 7; i++) {
+      workflowStatus('۲/۵ — ساخت عکس ' + i + ' از ۷...', 20 + i * 5, 'primary');
+      const made = await aiJsonRetry('ajax/product_workflow_generate_image.php', {
+        job_id: workflowJobId,
+        index: i
+      }, 2);
+      if (!made.image?.id || !made.image?.src) throw new Error('تصویر ' + i + ' کامل ثبت نشد.');
+      images.push({id: made.image.id, src: made.image.src, name: 'BAJI ' + i});
       renderGallery();
+    }
 
-      for (let i = 1; i <= 7; i++) {
-        aiStatus.textContent = '۲/۳ — ساخت تصویر حرفه‌ای ' + i + ' از ۷ و ثبت در وردپرس...';
-        const made = await aiJsonWithRetry('ajax/product_ai_image.php', {
-          image_url: rawUrl,
-          face_reference_url: faceUrl,
-          product_name: analyzed.analysis.name,
-          focus_keyword: analyzed.analysis.focus_keyword,
-          index: i,
-          instructions: 'BAJI ecommerce product photo. Preserve garment color, fabric, seams, pockets, buttons, hood, print and proportions exactly. Use varied realistic fashion poses/backgrounds. One photo only; no text, logo overlay, collage, grid or multi-view.'
-        }, 2);
+    workflowStatus('هر ۷ عکس مستقل آماده و در WordPress ثبت شد.', 55, 'success');
+    enableStageButtons('images_ready');
+  }
 
-        if (!made.image || !made.image.id || !made.image.src) {
-          throw new Error('عکس ' + i + ' در وردپرس ذخیره نشد.');
+  async function adoptCurrentGallery() {
+    await ensureWorkflowStarted();
+    if (images.length !== 7) throw new Error('گالری باید دقیقاً ۷ تصویر داشته باشد.');
+    workflowStatus('ثبت ۷ عکس فعلی گالری در Workflow...', 45, 'primary');
+    await aiJson('ajax/product_workflow_adopt_gallery.php', {
+      job_id: workflowJobId,
+      images: images.map(i => ({id: i.id || 0, src: i.src || ''}))
+    });
+
+    const state = await aiJson('ajax/product_workflow_status.php', {job_id: workflowJobId});
+    images = (state.images || []).map(row => ({
+      id: parseInt(row.wordpress_media_id, 10),
+      src: row.public_url,
+      name: 'BAJI ' + row.image_index
+    }));
+    renderGallery();
+    workflowStatus('۷ عکس گالری وارد Workflow شد.', 55, 'success');
+    enableStageButtons('images_ready');
+  }
+
+  function renderQcFailures(qc) {
+    const failed = (qc.checks || []).filter(x => !x.technical_pass);
+    if (!failed.length) return;
+
+    aiPreviewBox.classList.remove('d-none');
+    aiPreviewBox.innerHTML =
+      '<div class="alert alert-warning p-2 mb-2">QC فنی رد شد؛ فقط عکس‌های مشکل‌دار را بازسازی کن.</div>' +
+      failed.map(check => {
+        const idx = parseInt(check.image_index, 10);
+        const img = images[idx - 1];
+        return '<div class="border rounded p-2 mb-2 bg-white">' +
+          (img ? '<img src="' + escapeHtml(img.src) + '" class="w-100 rounded mb-2" style="aspect-ratio:9/16;object-fit:cover">' : '') +
+          '<div class="small text-danger mb-1">تصویر ' + idx + ': ' + escapeHtml(check.reason || 'استاندارد فنی رد شد') + '</div>' +
+          '<button type="button" class="btn btn-sm btn-outline-danger w-100 aiRetryImageBtn" data-index="' + idx + '">بازسازی همین عکس</button>' +
+          '</div>';
+      }).join('');
+
+    aiPreviewBox.querySelectorAll('.aiRetryImageBtn').forEach(btn => {
+      btn.addEventListener('click', () => retryWorkflowImage(parseInt(btn.dataset.index, 10)));
+    });
+  }
+
+  async function runWorkflowQc() {
+    await ensureWorkflowStarted();
+    workflowStatus('۳/۵ — کنترل ۹:۱۶، رزولوشن، حجم و تصاویر تکراری...', 62, 'primary');
+    const result = await aiJson('ajax/product_workflow_qc.php', {job_id: workflowJobId});
+    if (!result.qc?.all_technical_pass) {
+      renderQcFailures(result.qc || {});
+      enableStageButtons('needs_review');
+      throw new Error('QC فنی رد شد. عکس‌های مشکل‌دار را بازسازی کن.');
+    }
+    workflowStatus('QC فنی هر ۷ تصویر پاس شد.', 68, 'success');
+    enableStageButtons('qc_passed');
+    return result.qc;
+  }
+
+  async function buildWorkflowSeo() {
+    await ensureWorkflowStarted();
+    workflowStatus('۴/۵ — ساخت SEO و متادیتای محصول...', 75, 'primary');
+    const result = await aiJson('ajax/product_workflow_build_seo.php', {job_id: workflowJobId});
+    const seo = result.seo || {};
+    document.getElementById('f_name').value = seo.name || document.getElementById('f_name').value;
+    document.getElementById('f_short_description').value = seo.short_description || '';
+    document.getElementById('f_description').value = seo.description || '';
+    document.getElementById('f_seo_title').value = seo.seo_title || '';
+    document.getElementById('f_meta_description').value = seo.meta_description || '';
+    document.getElementById('f_focus_keyword').value = seo.focus_keyword || '';
+    workflowStatus('SEO آماده شد.', 80, 'success');
+    enableStageButtons('seo_ready');
+    return seo;
+  }
+
+  async function loadWorkflowPreview() {
+    await ensureWorkflowStarted();
+    workflowStatus('۵/۵ — ساخت پیش‌نمایش نهایی...', 88, 'primary');
+    const result = await aiJson('ajax/product_workflow_preview.php', {job_id: workflowJobId});
+    renderWorkflowPreview(result.preview || {});
+    workflowStatus('پیش‌نمایش آماده است؛ هر ۷ عکس را بررسی کن.', 90, 'success');
+    enableStageButtons('preview_ready');
+    return result.preview;
+  }
+
+  function renderWorkflowPreview(p) {
+    aiPreviewBox.classList.remove('d-none');
+    const face = p.face_reference_quality || {};
+    const faceWarning = face.reference_pass === false
+      ? '<div class="alert alert-warning p-2 small">کیفیت چهره مرجع پایین است' +
+        (face.width ? ' (' + face.width + '×' + face.height + ')' : '') +
+        '. برای محصولات بعدی نسخه اصلی چهره BAJI را جایگزین کن.</div>'
+      : '';
+
+    const cards = (p.images || []).map(img => {
+      const idx = parseInt(img.image_index, 10);
+      return '<div class="col-6 mb-2"><div class="border rounded p-1 bg-white">' +
+        '<img src="' + escapeHtml(img.public_url) + '" class="w-100 rounded" style="aspect-ratio:9/16;object-fit:cover">' +
+        '<div class="d-flex justify-content-between align-items-center mt-1">' +
+        '<small>#' + idx + ' • QC ' + escapeHtml(img.qc_score || '-') + '</small>' +
+        '<button type="button" class="btn btn-link btn-sm p-0 aiRetryImageBtn" data-index="' + idx + '">بازسازی</button>' +
+        '</div></div></div>';
+    }).join('');
+
+    aiPreviewBox.innerHTML =
+      faceWarning +
+      '<div class="border rounded p-2 bg-white">' +
+      '<div class="fw-bold mb-1">' + escapeHtml(p.name) + '</div>' +
+      '<div class="small text-muted mb-2">قیمت اصلی: ' + escapeHtml(p.regular_price || '-') +
+      ' • تخفیف: ' + escapeHtml(p.sale_price || '-') + '</div>' +
+      '<div class="row g-1">' + cards + '</div>' +
+      '<hr class="my-2">' +
+      '<div class="small mb-1"><strong>SEO:</strong> ' + escapeHtml(p.seo_title || '') + '</div>' +
+      '<div class="small text-muted mb-2">' + escapeHtml(p.meta_description || '') + '</div>' +
+      '<div class="form-check mb-2">' +
+      '<input class="form-check-input" type="checkbox" id="aiVisualApproval">' +
+      '<label class="form-check-label small" for="aiVisualApproval">هر ۷ عکس، لباس، رنگ و چهره را بررسی و تأیید کردم.</label>' +
+      '</div>' +
+      '<button type="button" class="btn btn-success w-100" id="aiPublishApprovedBtn" disabled>تأیید و انتشار نهایی</button>' +
+      '</div>';
+
+    const approval = document.getElementById('aiVisualApproval');
+    const publishBtn = document.getElementById('aiPublishApprovedBtn');
+    approval.addEventListener('change', () => { publishBtn.disabled = !approval.checked; });
+    publishBtn.addEventListener('click', publishWorkflow);
+
+    aiPreviewBox.querySelectorAll('.aiRetryImageBtn').forEach(btn => {
+      btn.addEventListener('click', () => retryWorkflowImage(parseInt(btn.dataset.index, 10)));
+    });
+  }
+
+  async function retryWorkflowImage(index) {
+    if (!workflowJobId) return;
+    try {
+      setWorkflowBusy(true);
+      workflowStatus('بازسازی تصویر ' + index + '...', 58, 'primary');
+      const result = await aiJson('ajax/product_workflow_generate_image.php', {
+        job_id: workflowJobId,
+        index: index,
+        force: true
+      });
+      const pos = images.findIndex((_, i) => i + 1 === index);
+      const item = {id: result.image.id, src: result.image.src, name: 'BAJI ' + index};
+      if (pos >= 0) images[pos] = item;
+      else images[index - 1] = item;
+      images = images.filter(Boolean);
+      renderGallery();
+      aiPreviewBox.classList.add('d-none');
+      await runWorkflowQc();
+      await buildWorkflowSeo();
+      await loadWorkflowPreview();
+    } catch (e) {
+      workflowStatus('بازسازی ناموفق: ' + e.message, null, 'danger');
+    } finally {
+      setWorkflowBusy(false);
+      try {
+        const state = await aiJson('ajax/product_workflow_status.php', {job_id: workflowJobId});
+        enableStageButtons(state.job?.workflow_status || 'needs_review');
+      } catch (_) {}
+    }
+  }
+
+  async function publishWorkflow() {
+    const btn = document.getElementById('aiPublishApprovedBtn');
+    if (btn) btn.disabled = true;
+    try {
+      workflowStatus('در حال انتشار نهایی در WooCommerce...', 96, 'primary');
+      const result = await aiJson('ajax/product_workflow_publish.php', {
+        job_id: workflowJobId,
+        approved: true
+      });
+      sessionStorage.removeItem(workflowStorageKey);
+      workflowStatus('محصول با موفقیت منتشر شد.', 100, 'success');
+      if (result.result?.permalink) {
+        aiPreviewBox.insertAdjacentHTML(
+          'beforeend',
+          '<a class="btn btn-outline-success w-100 mt-2" target="_blank" rel="noopener" href="' +
+          escapeHtml(result.result.permalink) + '">مشاهده محصول منتشرشده</a>'
+        );
+      }
+    } catch (e) {
+      workflowStatus('انتشار ناموفق: ' + e.message, null, 'danger');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function runWorkflowToPreview() {
+    setWorkflowBusy(true);
+    try {
+      await ensureWorkflowStarted();
+      await analyzeWorkflow();
+      await generateWorkflowImages();
+      await runWorkflowQc();
+      await buildWorkflowSeo();
+      await loadWorkflowPreview();
+    } catch (e) {
+      workflowStatus('Workflow متوقف شد: ' + e.message + ' — محصول منتشر نشد.', null, 'danger');
+    } finally {
+      setWorkflowBusy(false);
+      if (workflowJobId) {
+        try {
+          const state = await aiJson('ajax/product_workflow_status.php', {job_id: workflowJobId});
+          enableStageButtons(state.job?.workflow_status || 'draft_input');
+        } catch (_) {
+          enableStageButtons('draft_input');
         }
-        images.push(made.image);
+      }
+    }
+  }
+
+  async function restoreWorkflowState() {
+    const saved = parseInt(sessionStorage.getItem(workflowStorageKey) || '0', 10);
+    if (!saved) return;
+    try {
+      workflowJobId = saved;
+      const state = await aiJson('ajax/product_workflow_status.php', {job_id: saved});
+      const jobState = state.job?.workflow_status || 'draft_input';
+
+      if (jobState === 'published') {
+        sessionStorage.removeItem(workflowStorageKey);
+        workflowStatus('این Workflow قبلاً منتشر شده است.', 100, 'success');
+        return;
+      }
+
+      const restored = (state.images || []).filter(x => x.wordpress_media_id && x.public_url);
+      if (restored.length) {
+        images = restored.map(x => ({
+          id: parseInt(x.wordpress_media_id, 10),
+          src: x.public_url,
+          name: 'BAJI ' + x.image_index
+        }));
         renderGallery();
       }
 
-      if (images.length !== 7) throw new Error('تعداد تصاویر نهایی دقیقاً ۷ عدد نشد.');
-      aiStatus.textContent = '۳/۳ — ۷ تصویر و SEO آماده شد؛ محصول در حال انتشار است...';
-      aiStatus.className = 'small mt-2 text-success';
-      document.getElementById('f_status').value = 'publish';
-      document.getElementById('productForm').requestSubmit();
+      enableStageButtons(jobState);
+      workflowStatus('Workflow قبلی بازیابی شد: ' + jobState, state.job?.progress_percent || 0, 'primary');
+
+      if (jobState === 'preview_ready') {
+        await loadWorkflowPreview();
+      }
+    } catch (_) {
+      workflowJobId = null;
+      sessionStorage.removeItem(workflowStorageKey);
+    }
+  }
+
+  aiRunBtn?.addEventListener('click', runWorkflowToPreview);
+  aiAdoptBtn?.addEventListener('click', async () => {
+    try {
+      setWorkflowBusy(true);
+      await adoptCurrentGallery();
+      await runWorkflowQc();
+      await buildWorkflowSeo();
+      await loadWorkflowPreview();
     } catch (e) {
-      aiStatus.textContent = 'خطا: ' + e.message + ' — محصول منتشر نشد.';
-      aiStatus.className = 'small mt-2 text-danger';
+      workflowStatus('گالری وارد Workflow نشد: ' + e.message, null, 'danger');
     } finally {
-      aiBuildBtn.disabled = false;
+      setWorkflowBusy(false);
+      if (workflowJobId) {
+        try {
+          const state = await aiJson('ajax/product_workflow_status.php', {job_id: workflowJobId});
+          enableStageButtons(state.job?.workflow_status || 'draft_input');
+        } catch (_) {}
+      }
     }
   });
+
+  aiResetBtn?.addEventListener('click', () => {
+    if (workflowBusy) return;
+    sessionStorage.removeItem(workflowStorageKey);
+    workflowJobId = null;
+    aiPreviewBox.innerHTML = '';
+    aiPreviewBox.classList.add('d-none');
+    images = productData?.images ? productData.images.map(i => ({id:i.id,src:i.src,name:i.name})) : [];
+    renderGallery();
+    [aiAnalyzeBtn, aiImagesBtn, aiQcBtn, aiSeoBtn, aiPreviewBtn].filter(Boolean).forEach(btn => btn.disabled = true);
+    workflowStatus('Workflow جدید آماده است.', 0, 'muted');
+  });
+
+  aiAnalyzeBtn?.addEventListener('click', async () => {
+    try { await analyzeWorkflow(); } catch(e) { workflowStatus(e.message, null, 'danger'); }
+  });
+  aiImagesBtn?.addEventListener('click', async () => {
+    try {
+      setWorkflowBusy(true);
+      await generateWorkflowImages();
+    } catch(e) {
+      workflowStatus(e.message, null, 'danger');
+    } finally {
+      setWorkflowBusy(false);
+      if (workflowJobId) {
+        try {
+          const state = await aiJson('ajax/product_workflow_status.php', {job_id: workflowJobId});
+          enableStageButtons(state.job?.workflow_status || 'draft_input');
+        } catch (_) {
+          enableStageButtons('draft_input');
+        }
+      }
+    }
+  });
+  aiQcBtn?.addEventListener('click', async () => {
+    try { await runWorkflowQc(); } catch(e) { workflowStatus(e.message, null, 'danger'); }
+  });
+  aiSeoBtn?.addEventListener('click', async () => {
+    try { await buildWorkflowSeo(); } catch(e) { workflowStatus(e.message, null, 'danger'); }
+  });
+  aiPreviewBtn?.addEventListener('click', async () => {
+    try { await loadWorkflowPreview(); } catch(e) { workflowStatus(e.message, null, 'danger'); }
+  });
+
+  setTimeout(async () => {
+    await runPreflight();
+    await restoreWorkflowState();
+  }, 0);
 
   // ---------------------------------------------------------------
   // Attributes builder

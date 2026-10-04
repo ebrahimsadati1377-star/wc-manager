@@ -158,8 +158,8 @@ class ProductAiSeoService
             'جنس' => $analysis['material'] ?? '',
             'رنگ' => $analysis['color'] ?? '',
             'سایز' => $analysis['size'] ?? '',
-            'نگهداری و شستشو' => $analysis['care'] ?? '',
-            'توضیحات تکمیلی' => $analysis['other_description'] ?? '',
+            'مراقبت و شستشو' => $analysis['care'] ?? '',
+            'توضیحات دیگر' => $analysis['other_description'] ?? '',
         ];
 
         $attributes = [];

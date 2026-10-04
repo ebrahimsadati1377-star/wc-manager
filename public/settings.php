@@ -16,6 +16,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $openaiKey  = trim($_POST['openai_api_key'] ?? '');
     $arenaKey   = trim($_POST['arena_api_key'] ?? '');
     $arenaModel = trim($_POST['arena_image_model'] ?? 'gpt-image-1.5');
+    $productImageProvider = trim($_POST['product_image_provider'] ?? 'arena');
+    $fallbackEnabled = !empty($_POST['product_image_fallback_enabled']) ? '1' : '0';
+    $fallbackProvider = trim($_POST['product_image_fallback_provider'] ?? 'openai');
+    $qcRetryLimit = (string)max(0, min(5, (int)($_POST['product_qc_retry_limit'] ?? 2)));
+    $previewRequired = !empty($_POST['product_preview_before_publish']) ? '1' : '0';
 
     if ($ck === '') $ck = (string)getSetting('consumer_key');
     if ($cs === '') $cs = (string)getSetting('consumer_secret');
@@ -33,6 +38,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     setSetting('openai_api_key', $openaiKey);
     setSetting('arena_api_key', $arenaKey);
     setSetting('arena_image_model', $arenaModel ?: 'gpt-image-1.5');
+    setSetting('product_image_provider', in_array($productImageProvider, ['arena','openai','manual'], true) ? $productImageProvider : 'arena');
+    setSetting('product_image_fallback_enabled', $fallbackEnabled);
+    setSetting('product_image_fallback_provider', in_array($fallbackProvider, ['arena','openai'], true) ? $fallbackProvider : 'openai');
+    setSetting('product_qc_retry_limit', $qcRetryLimit);
+    setSetting('product_preview_before_publish', $previewRequired);
+    setSetting('required_product_images_count', '7');
 
     logActivity('update_settings', 'settings', 'به‌روزرسانی تنظیمات اتصال ووکامرس، وردپرس و Arena');
     setFlash('success', 'تنظیمات ذخیره شد.');
@@ -112,6 +123,46 @@ require __DIR__ . '/partials/header.php';
             <button type="button" class="btn btn-outline-primary" id="testArenaBtn"><i class="fas fa-signal ms-1"></i>تست Arena</button>
             <span id="testArenaResult" class="small"></span>
           </div>
+        </div>
+      </section>
+
+      <section class="app-section-card">
+        <div class="app-section-card__head"><div><h2>Workflow حرفه‌ای محصول</h2><p>کنترل موتور تصویر، Fallback، Retry و قفل انتشار.</p></div><i class="fas fa-diagram-project text-primary"></i></div>
+        <div class="app-section-card__body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">موتور اصلی تصویر</label>
+              <?php $imageProvider = (string)getSetting('product_image_provider', 'arena'); ?>
+              <select name="product_image_provider" class="form-select">
+                <option value="arena" <?= $imageProvider === 'arena' ? 'selected' : '' ?>>Arena</option>
+                <option value="openai" <?= $imageProvider === 'openai' ? 'selected' : '' ?>>OpenAI API</option>
+                <option value="manual" <?= $imageProvider === 'manual' ? 'selected' : '' ?>>Manual / ChatGPT Gallery</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Fallback</label>
+              <?php $fallbackProvider = (string)getSetting('product_image_fallback_provider', 'openai'); ?>
+              <select name="product_image_fallback_provider" class="form-select">
+                <option value="openai" <?= $fallbackProvider === 'openai' ? 'selected' : '' ?>>OpenAI</option>
+                <option value="arena" <?= $fallbackProvider === 'arena' ? 'selected' : '' ?>>Arena</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">حداکثر Retry هر عکس</label>
+              <input type="number" min="0" max="5" name="product_qc_retry_limit" class="form-control" value="<?= (int)getSetting('product_qc_retry_limit', '2') ?>">
+            </div>
+            <div class="col-12 d-flex gap-4 flex-wrap">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="product_image_fallback_enabled" value="1" id="workflowFallbackEnabled" <?= getSetting('product_image_fallback_enabled','0') === '1' ? 'checked' : '' ?>>
+                <label class="form-check-label" for="workflowFallbackEnabled">Fallback خودکار فعال باشد</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="product_preview_before_publish" value="1" id="workflowPreviewRequired" <?= getSetting('product_preview_before_publish','1') === '1' ? 'checked' : '' ?>>
+                <label class="form-check-label" for="workflowPreviewRequired">Preview و تأیید بصری قبل از انتشار اجباری باشد</label>
+              </div>
+            </div>
+          </div>
+          <div class="form-text mt-2">پیشنهاد BAJI: Arena، Fallback خاموش، ۷ عکس، QC اجباری و انتشار فقط بعد از تأیید Preview.</div>
         </div>
       </section>
 
