@@ -90,7 +90,7 @@ foreach ($rows as $row) {
         ."کد اختصاصی: ".$gift['code']."\n"
         ."اعتبار تا پایان ".$expiresJ."\n"
         ."این کد یک‌بار و فقط با شماره موبایل خودت قابل استفاده است.\n\n"
-        ."خرید: https://bajistyle.ir\n"
+        ."خرید: https://bajistyle.ir/?utm_source=sms&utm_medium=sms&utm_campaign=birthday\n"
         ."باجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
     try {
         $result=$sms->send($phone,$msg);

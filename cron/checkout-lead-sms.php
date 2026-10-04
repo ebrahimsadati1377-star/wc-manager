@@ -53,8 +53,8 @@ foreach ($rows as $lead) {
   continue;
  }
  $name=trim((string)$lead['first_name']);$greeting=$name!==''?$name.' جان 🤍':'باجی جان 🤍';
- $link='https://bajistyle.ir/checkout/';
- $message=$greeting."\nیه انتخاب قشنگ تو سبد خریدت منتظرته! 🛍️\n\nاگه هنوز می‌خوایش، از لینک زیر برگرد و خریدت رو تکمیل کن 🌷\n\nسایت باجی: https://bajistyle.ir\nادامه خرید:\n".$link."\n\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
+ $link='https://bajistyle.ir/checkout/?utm_source=sms&utm_medium=sms&utm_campaign=checkout_lead';
+ $message=$greeting."\nیه انتخاب قشنگ تو سبد خریدت منتظرته! 🛍️\n\nاگه هنوز می‌خوایش، از لینک زیر برگرد و خریدت رو تکمیل کن 🌷\n\nسایت باجی: https://bajistyle.ir/?utm_source=sms&utm_medium=sms&utm_campaign=checkout_lead\nادامه خرید:\n".$link."\n\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
  $state='unknown';$mid='';
  try {
   $answer=$sms->send($phone,$message);

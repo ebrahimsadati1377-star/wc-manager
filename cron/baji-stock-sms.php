@@ -16,7 +16,7 @@ foreach($rows as $row){
  $p=WooOrderConfirmationSms::normalizePhone($row['phone']);if(!$p)continue;
  $key='stock:'.$row['id'];
  if(!BajiSmsCampaigns::claim($db,$p,'stock',$key,false))continue;
- $link='https://bajistyle.ir/?p='.$id;
+ $link='https://bajistyle.ir/?p='.$id.'&utm_source=sms&utm_medium=sms&utm_campaign=stock_alert';
  $msg="باجی 🤍\nمحصولی که منتظرش بودی دوباره موجود شد!\nبرای دیدن محصول و خرید:\n".$link."\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
  try{$a=$sms->send($p,$msg);$state=!empty($a['accepted'])?'accepted':'failed';BajiSmsCampaigns::result($db,$key,$state,(string)($a['message_id']??''));}
  catch(Throwable $e){$state='unknown';BajiSmsCampaigns::result($db,$key,$state);error_log('[BAJI stock] '.$e->getMessage());}

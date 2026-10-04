@@ -28,7 +28,7 @@ foreach($contacts as $c) {
  $key='winback:'.gmdate('Y-m').':'.$p;
  if(!BajiSmsCampaigns::claim($db,$p,'winback',$key,true))continue;
  $name=trim($c['first_name'])?:'دوست عزیز';
- $msg=$name." جان 🤍\nدلمون برای دیدنت تو باجی تنگ شده! 🌷\nمدل‌های تازه رو ببین:\nhttps://bajistyle.ir\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
+ $msg=$name." جان 🤍\nدلمون برای دیدنت تو باجی تنگ شده! 🌷\nمدل‌های تازه رو ببین:\nhttps://bajistyle.ir/?utm_source=sms&utm_medium=sms&utm_campaign=winback\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
  try {$a=$sms->send($p,$msg);BajiSmsCampaigns::result($db,$key,!empty($a['accepted'])?'accepted':'failed',(string)($a['message_id']??''));}
  catch(Throwable $e){BajiSmsCampaigns::result($db,$key,'unknown');error_log('[BAJI winback] '.$e->getMessage());}
 }

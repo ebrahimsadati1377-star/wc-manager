@@ -49,7 +49,8 @@ foreach (['pending','failed'] as $status) {
   $paymentUrl=trim((string)($o['payment_url']??''));
   $parts=parse_url($paymentUrl);
   if (!is_array($parts) || ($parts['scheme']??'')!=='https' || ($parts['host']??'')!=='bajistyle.ir' || !str_contains((string)($parts['path']??''),'/checkout/order-pay/'.$id.'/')) continue;
-  $message=$greeting."\nسفارشت در باجی هنوز منتظر تکمیل پرداخته. 🛍️\n\nاگه هنوز انتخابت رو می‌خوای، برگرد و سفارشت رو تکمیل کن تا موجودیش تموم نشده 🌷\n\nشماره سفارش: #".$id."\nسایت باجی: https://bajistyle.ir\nادامه خرید و پرداخت:\n".$paymentUrl."\n\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
+  $paymentUrl .= (str_contains($paymentUrl,'?')?'&':'?').http_build_query(['utm_source'=>'sms','utm_medium'=>'sms','utm_campaign'=>'unpaid_order','utm_content'=>'order_'.$id]);
+  $message=$greeting."\nسفارشت در باجی هنوز منتظر تکمیل پرداخته. 🛍️\n\nاگه هنوز انتخابت رو می‌خوای، برگرد و سفارشت رو تکمیل کن تا موجودیش تموم نشده 🌷\n\nشماره سفارش: #".$id."\nسایت باجی: https://bajistyle.ir/?utm_source=sms&utm_medium=sms&utm_campaign=unpaid_order\nادامه خرید و پرداخت:\n".$paymentUrl."\n\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
   $state='unknown';$messageId='';
   try {
    $answer=$sms->send($phone,$message);

@@ -17,7 +17,7 @@ foreach($rows as $row){
  if(!BajiSmsCampaigns::claim($db,$phone,'satisfaction',$key,false))continue;
  $name=trim((string)($o['billing']['first_name']??''))?:'دوست عزیز';
  $name=mb_substr($name,0,35);
- $msg=$name." جان 🤍\nامیدواریم از خریدت از باجی راضی باشی. 🌷\nخوشحال می‌شیم نظرت رو درباره سفارش #".$id." بدونیم.\nhttps://bajistyle.ir/my-account/orders/\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
+ $msg=$name." جان 🤍\nامیدواریم از خریدت از باجی راضی باشی. 🌷\nخوشحال می‌شیم نظرت رو درباره سفارش #".$id." بدونیم.\nhttps://bajistyle.ir/my-account/orders/?utm_source=sms&utm_medium=sms&utm_campaign=satisfaction\nباجی؛ کیفیتی که با اولین پوشیدن حسش می‌کنی🤍";
  try{$a=$sms->send($phone,$msg);$state=!empty($a['accepted'])?'accepted':'failed';BajiSmsCampaigns::result($db,$key,$state,(string)($a['message_id']??''));}
  catch(Throwable $e){$state='unknown';BajiSmsCampaigns::result($db,$key,$state);error_log('[BAJI satisfaction] '.$e->getMessage());}
  $q=$db->prepare("UPDATE baji_sms_deliveries SET state=? WHERE order_id=?");$q->execute([$state,$id]);
