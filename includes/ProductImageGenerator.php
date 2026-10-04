@@ -21,11 +21,9 @@ class ProductImageGenerator
         if ($productName === '') throw new RuntimeException('product_name is required.');
         $productReference = $this->referenceUrl($this->referenceInput($arguments, 'product_reference'), 'product_reference_image');
         $faceInput = $this->referenceInput($arguments, 'face_reference');
-        if (!$faceInput) {
-            $storedFaceReference = trim((string)getSetting('baji_face_reference_url', ''));
-            if ($storedFaceReference !== '') $faceInput = $storedFaceReference;
-        }
-        $faceReference = $faceInput ? $this->referenceUrl($faceInput, 'face_reference_image') : $productReference;
+        $faceReference = $faceInput
+            ? $this->referenceUrl($faceInput, 'face_reference_image')
+            : null;
         $count = isset($arguments['count']) ? (int)$arguments['count'] : 7;
         if ($count < 1 || $count > 10) throw new RuntimeException('count must be between 1 and 10.');
         $aspectRatio = trim((string)($arguments['aspect_ratio'] ?? '9:16')) ?: '9:16';
@@ -62,11 +60,9 @@ class ProductImageGenerator
 
         $productReference = $this->referenceUrl($this->referenceInput($arguments, 'product_reference'), 'product_reference_image');
         $faceInput = $this->referenceInput($arguments, 'face_reference');
-        if (!$faceInput) {
-            $storedFaceReference = trim((string)getSetting('baji_face_reference_url', ''));
-            if ($storedFaceReference !== '') $faceInput = $storedFaceReference;
-        }
-        $faceReference = $faceInput ? $this->referenceUrl($faceInput, 'face_reference_image') : $productReference;
+        $faceReference = $faceInput
+            ? $this->referenceUrl($faceInput, 'face_reference_image')
+            : null;
         $aspectRatio = trim((string)($arguments['aspect_ratio'] ?? '9:16')) ?: '9:16';
         if (!in_array($aspectRatio, ['9:16', '16:9', '1:1'], true)) throw new RuntimeException('Invalid aspect ratio.');
         $instructions = trim((string)($arguments['instructions'] ?? ''));
@@ -116,16 +112,24 @@ class ProductImageGenerator
         return ['success'=>true,'generated'=>$generated,'product'=>$created['data'] ?? $created];
     }
 
-    private function runIndependentJob(string $apiKey, string $productName, string $productReference, string $faceReference, string $aspectRatio, string $instructions, bool $wordpressUpload, int $index, int $count): array
+    private function runIndependentJob(string $apiKey, string $productName, string $productReference, ?string $faceReference, string $aspectRatio, string $instructions, bool $wordpressUpload, int $index, int $count): array
     {
         $poses = ['natural full-body front three-quarter standing pose','natural walking pose, full body','relaxed side three-quarter pose, full body','editorial standing pose with one hand relaxed, full body','natural seated or leaning fashion pose while keeping the garment fully visible','back three-quarter fashion pose with face naturally visible','confident straight-on full-body catalog pose','dynamic but realistic street-style full-body pose','minimal studio full-body pose with relaxed arms','natural turning pose, one single camera view'];
         $pose = $poses[($index - 1) % count($poses)];
-        $prompt = "Create exactly ONE final product photograph for BAJI.\nProduct: {$productName}.\nThis is independent job {$index} of {$count}; output ONE image only, ONE frame only, ONE camera view only, ONE pose only.\nPose for this job: {$pose}.\nUse the first reference image as the authoritative garment reference and preserve it exactly: color, fabric appearance, silhouette/form, stitching, seams, pockets, collar, hood, buttons/zippers, trims, proportions, prints and every visible construction detail. Do not redesign the garment.\nUse the second reference image as the face/identity reference and keep the same model identity and facial features.\nCompose for {$aspectRatio}. Photorealistic professional fashion photography, natural anatomy, realistic fabric texture, clean lighting.\nSTRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split screen, multiple panels, multiple views, before/after layout, duplicated person, or more than one photo in the output.\n";
+        $prompt = "Create exactly ONE final product photograph for BAJI.\nProduct: {$productName}.\nThis is independent job {$index} of {$count}; output ONE image only, ONE frame only, ONE camera view only, ONE pose only.\nPose for this job: {$pose}.\nUse the product reference image as the authoritative garment reference and preserve it exactly: color, fabric appearance, silhouette/form, stitching, seams, pockets, collar, hood, buttons/zippers, trims, proportions, prints and every visible construction detail. Do not redesign the garment.\nUse a natural attractive Iranian female fashion model.\nCompose for {$aspectRatio}. Photorealistic professional fashion photography, natural anatomy, realistic fabric texture, clean lighting.\nSTRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split screen, multiple panels, multiple views, before/after layout, duplicated person, or more than one photo in the output.\n";
+        if ($faceReference) $prompt .= "An optional face reference is supplied; use it only as a soft identity guide, never at the expense of garment accuracy.\n";
         if ($instructions !== '') $prompt .= "Additional instructions: {$instructions}\n";
         $size = $aspectRatio === '16:9' ? '1536x1024' : ($aspectRatio === '1:1' ? '1024x1024' : '1024x1536');
         $agentModel = trim((string)getenv('OPENAI_IMAGE_AGENT_MODEL')) ?: 'gpt-5.6-luna';
         $imageModel = trim((string)getenv('OPENAI_IMAGE_MODEL')) ?: 'gpt-image-2';
-        $payload = ['model'=>$agentModel,'store'=>false,'input'=>[['role'=>'user','content'=>[['type'=>'input_text','text'=>$prompt],['type'=>'input_image','image_url'=>$productReference,'detail'=>'high'],['type'=>'input_image','image_url'=>$faceReference,'detail'=>'high']]]],'tools'=>[['type'=>'image_generation','action'=>'edit','model'=>$imageModel,'quality'=>'high','size'=>$size,'output_format'=>'png','input_fidelity'=>'high']],'tool_choice'=>['type'=>'image_generation']];
+        $content = [
+            ['type'=>'input_text','text'=>$prompt],
+            ['type'=>'input_image','image_url'=>$productReference,'detail'=>'high'],
+        ];
+        if ($faceReference) {
+            $content[] = ['type'=>'input_image','image_url'=>$faceReference,'detail'=>'high'];
+        }
+        $payload = ['model'=>$agentModel,'store'=>false,'input'=>[['role'=>'user','content'=>$content]],'tools'=>[['type'=>'image_generation','action'=>'edit','model'=>$imageModel,'quality'=>'high','size'=>$size,'output_format'=>'png','input_fidelity'=>'high']],'tool_choice'=>['type'=>'image_generation']];
         $response = $this->postJson('https://api.openai.com/v1/responses', $apiKey, $payload);
         $base64 = $this->extractImageBase64($response);
         if ($aspectRatio !== '1:1') $base64 = $this->cropToExactAspect($base64, $aspectRatio);
@@ -144,7 +148,7 @@ class ProductImageGenerator
         return $result;
     }
 
-    private function runArenaIndependentJob(string $apiKey, string $productName, string $productReference, string $faceReference, string $aspectRatio, string $instructions, bool $wordpressUpload, int $index, int $count): array
+    private function runArenaIndependentJob(string $apiKey, string $productName, string $productReference, ?string $faceReference, string $aspectRatio, string $instructions, bool $wordpressUpload, int $index, int $count): array
     {
         $poses = ['natural full-body front three-quarter standing pose','natural walking pose, full body','relaxed side three-quarter pose, full body','editorial standing pose with one hand relaxed, full body','natural seated or leaning fashion pose while keeping the garment fully visible','back three-quarter fashion pose with face naturally visible','confident straight-on full-body catalog pose','dynamic but realistic street-style full-body pose','minimal studio full-body pose with relaxed arms','natural turning pose, one single camera view'];
         $pose = $poses[($index - 1) % count($poses)];
@@ -153,9 +157,11 @@ Product: {$productName}.
 This is independent job {$index} of {$count}; output ONE image only, ONE frame only, ONE camera view only, ONE pose only.
 Pose for this job: {$pose}.
 Use image 1 as the authoritative garment reference and preserve it exactly: color, fabric appearance, silhouette/form, stitching, seams, pockets, collar, hood, buttons/zippers, trims, proportions, prints and every visible construction detail. Do not redesign the garment.
-Use image 2 as the face/identity reference and keep the same model identity and facial features.
+Use a natural attractive Iranian female fashion model.
 Compose for {$aspectRatio}. Photorealistic professional fashion photography, natural anatomy, realistic fabric texture, clean lighting.
 STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split screen, multiple panels, multiple views, before/after layout, duplicated person, or more than one photo in the output.
+";
+        if ($faceReference) $prompt .= "Image 2 is an optional soft face guide; garment fidelity remains the priority.
 ";
         if ($instructions !== '') $prompt .= "Additional instructions: {$instructions}
 ";
@@ -164,15 +170,15 @@ STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split scree
         if ($model === '') $model = trim((string)getSetting('arena_image_model', 'gpt-image-1.5')) ?: 'gpt-image-1.5';
 
         $productFile = $this->downloadReferenceImage($productReference, 'arena-product-reference');
-        $faceFile = $faceReference === $productReference
-            ? $productFile
-            : $this->downloadReferenceImage($faceReference, 'arena-face-reference');
+        $faceFile = $faceReference
+            ? $this->downloadReferenceImage($faceReference, 'arena-face-reference')
+            : null;
 
         try {
             $response = $this->postArenaImageEdit($apiKey, $model, $prompt, $size, $productFile, $faceFile);
         } finally {
             @unlink($productFile);
-            if ($faceFile !== $productFile) @unlink($faceFile);
+            if ($faceFile) @unlink($faceFile);
         }
 
         $base64 = $this->extractArenaImageBase64($response);
@@ -231,7 +237,7 @@ STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split scree
         return $tmp;
     }
 
-    private function postArenaImageEdit(string $apiKey, string $model, string $prompt, string $size, string $productFile, string $faceFile): array
+    private function postArenaImageEdit(string $apiKey, string $model, string $prompt, string $size, string $productFile, ?string $faceFile = null): array
     {
         $fields = [
             'model' => $model,
@@ -239,8 +245,10 @@ STRICTLY FORBIDDEN: collage, grid, contact sheet, diptych, triptych, split scree
             'size' => $size,
             'response_format' => 'b64_json',
             'image[0]' => new CURLFile($productFile, 'image/png', 'product-reference.png'),
-            'image[1]' => new CURLFile($faceFile, 'image/png', 'face-reference.png'),
         ];
+        if ($faceFile) {
+            $fields['image[1]'] = new CURLFile($faceFile, 'image/png', 'face-reference.png');
+        }
         $ch = curl_init('https://api.preview.arena.ai/v1/images/edits');
         if ($ch === false) throw new RuntimeException('Could not initialize Arena image request.');
         curl_setopt_array($ch, [

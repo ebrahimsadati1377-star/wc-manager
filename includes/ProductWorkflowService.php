@@ -19,8 +19,8 @@ class ProductWorkflowService {
         ];
         $provider=$this->providers->snapshot();$selected=(string)$provider['selected'];
         return [
-            'ready_for_images'=>!empty($provider['available'][$selected])&&$checks['wordpress_media']&&$checks['face_reference'],
-            'ready_for_publish'=>!in_array(false,$checks,true),
+            'ready_for_images'=>!empty($provider['available'][$selected])&&$checks['wordpress_media'],
+            'ready_for_publish'=>$checks['woocommerce']&&$checks['wordpress_media']&&$checks['regular_price']&&$checks['sale_price'],
             'checks'=>$checks,'provider'=>$provider,'face_reference_url'=>$face
         ];
     }

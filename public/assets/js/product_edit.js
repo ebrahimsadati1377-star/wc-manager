@@ -212,12 +212,6 @@
       const selected = provider.selected || 'arena';
       if (aiProviderBadge) aiProviderBadge.textContent = selected.toUpperCase();
 
-      const q = p.face_reference_quality || {};
-      if (q.reference_pass === false && q.width) {
-        workflowStatus('هشدار: چهره مرجع BAJI کم‌کیفیت است (' + q.width + '×' + q.height + '). بهتر است نسخه اصلی و باکیفیت جایگزین شود.', 0, 'warning');
-        return;
-      }
-
       if (provider.available && !provider.available[selected]) {
         workflowStatus(
           selected.toUpperCase() + ' هنوز آماده نیست. فعلاً ۷ عکس ساخته‌شده در ChatGPT را در گالری بگذار و «استفاده از ۷ عکس فعلی گالری» را بزن.',
@@ -390,12 +384,6 @@
 
   function renderWorkflowPreview(p) {
     aiPreviewBox.classList.remove('d-none');
-    const face = p.face_reference_quality || {};
-    const faceWarning = face.reference_pass === false
-      ? '<div class="alert alert-warning p-2 small">کیفیت چهره مرجع پایین است' +
-        (face.width ? ' (' + face.width + '×' + face.height + ')' : '') +
-        '. برای محصولات بعدی نسخه اصلی چهره BAJI را جایگزین کن.</div>'
-      : '';
 
     const cards = (p.images || []).map(img => {
       const idx = parseInt(img.image_index, 10);
@@ -408,7 +396,6 @@
     }).join('');
 
     aiPreviewBox.innerHTML =
-      faceWarning +
       '<div class="border rounded p-2 bg-white">' +
       '<div class="fw-bold mb-1">' + escapeHtml(p.name) + '</div>' +
       '<div class="small text-muted mb-2">قیمت اصلی: ' + escapeHtml(p.regular_price || '-') +
@@ -419,7 +406,7 @@
       '<div class="small text-muted mb-2">' + escapeHtml(p.meta_description || '') + '</div>' +
       '<div class="form-check mb-2">' +
       '<input class="form-check-input" type="checkbox" id="aiVisualApproval">' +
-      '<label class="form-check-label small" for="aiVisualApproval">هر ۷ عکس، لباس، رنگ و چهره را بررسی و تأیید کردم.</label>' +
+      '<label class="form-check-label small" for="aiVisualApproval">هر ۷ عکس، لباس، رنگ و کیفیت نهایی را بررسی و تأیید کردم.</label>' +
       '</div>' +
       '<button type="button" class="btn btn-success w-100" id="aiPublishApprovedBtn" disabled>تأیید و انتشار نهایی</button>' +
       '</div>';
