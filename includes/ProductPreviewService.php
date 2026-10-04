@@ -11,14 +11,13 @@ class ProductPreviewService {
             if(($img['qc_status']??'')!=='technical_pass')throw new RuntimeException('همه تصاویر باید QC فنی را پاس کنند.');
         }
         $seo=(array)$job['seo_json'];if(!$seo||empty($seo['seo_title']))throw new RuntimeException('SEO هنوز آماده نیست.');
-        $face=[];if(!empty($job['face_reference_url']))$face=$this->quality->inspectReference((string)$job['face_reference_url'],'face');
         $preview=[
             'job_id'=>$jobId,'product_id'=>$job['product_id']?(int)$job['product_id']:null,'name'=>(string)($seo['name']??$job['product_name']),
             'regular_price'=>$job['regular_price'],'sale_price'=>$job['sale_price'],'stock_quantity'=>$job['stock_quantity'],
             'category_ids'=>(array)($seo['category_ids']??[]),'short_description'=>(string)($seo['short_description']??''),
             'description'=>(string)($seo['description']??''),'seo_title'=>(string)($seo['seo_title']??''),
             'meta_description'=>(string)($seo['meta_description']??''),'focus_keyword'=>(string)($seo['focus_keyword']??''),
-            'attributes'=>(array)($seo['attributes']??[]),'images'=>$images,'face_reference_quality'=>$face,
+            'attributes'=>(array)($seo['attributes']??[]),'images'=>$images,
             'manual_visual_review_required'=>true,'publish_locked'=>true
         ];
         $this->repo->update($jobId,['workflow_status'=>'preview_ready','current_step'=>'preview','progress_percent'=>90,'error_message'=>null]);

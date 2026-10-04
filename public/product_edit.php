@@ -325,9 +325,9 @@ require __DIR__ . '/partials/header.php';
             <div class="small text-muted mb-2">ورودی → تحلیل → ۷ عکس مستقل → QC → SEO → Preview → انتشار</div>
             <label class="form-label small mb-1">عکس خام محصول</label>
             <input type="file" id="aiRawProductImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-2">
-            <label class="form-label small mb-1">چهره مرجع BAJI</label>
+            <label class="form-label small mb-1">چهره مرجع BAJI (اختیاری)</label>
             <input type="file" id="aiFaceReferenceImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-1">
-            <div class="form-text mb-2"><?= $hasBajiFaceReference ? 'چهره مرجع ذخیره است؛ فقط برای تغییر آن فایل جدید انتخاب کن.' : 'بار اول چهره مرجع BAJI را انتخاب کن.' ?></div>
+            <div class="form-text mb-2">فعلاً اجباری نیست و Workflow بدون آن هم ادامه می‌دهد.</div>
             <textarea id="aiProductNotes" class="form-control form-control-sm mb-2" rows="3" placeholder="فقط اطلاعات قطعی: جنس، سایز، رنگ، قد، شستشو و..."></textarea>
             <button type="button" class="btn btn-dark w-100 mb-2" id="aiWorkflowRunBtn">✨ اجرای Workflow تا پیش‌نمایش</button>
             <button type="button" class="btn btn-sm btn-outline-primary w-100 mb-2" id="aiAdoptGalleryBtn">استفاده از ۷ عکس فعلی گالری</button>
