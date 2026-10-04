@@ -7,7 +7,7 @@ class ProductWorkflowRepository {
         $s=$this->db->prepare('SELECT * FROM ai_product_jobs WHERE id=?');
         $s->execute([$id]); $r=$s->fetch();
         if(!$r) throw new RuntimeException('Workflow پیدا نشد.');
-        foreach(['manual_input_json','analysis_json','seo_json','qc_json','publish_result_json','validation_json','provider_snapshot_json'] as $k){
+        foreach(['manual_input_json','analysis_json','seo_json','qc_json','publish_result_json','validation_json','provider_snapshot_json','visual_qc_json','diversity_qc_json','publish_verification_json','category_rules_json'] as $k){
             $r[$k]=$this->decode($r[$k]??null);
         }
         return $r;
@@ -28,7 +28,7 @@ class ProductWorkflowRepository {
         return $this->get($id);
     }
     public function update(int $id,array $fields): void {
-        $allowed=['product_id','workflow_status','product_name','category_id','raw_product_image_url','face_reference_url','provider','fallback_provider','regular_price','sale_price','stock_quantity','manual_input_json','analysis_json','seo_json','qc_json','publish_result_json','error_message','retry_count','progress_percent','current_step','validation_json','provider_snapshot_json','visual_approved_at','completed_at','lock_token','lock_expires_at','revision'];
+        $allowed=['product_id','workflow_status','product_name','category_id','raw_product_image_url','face_reference_url','provider','fallback_provider','regular_price','sale_price','stock_quantity','manual_input_json','analysis_json','seo_json','qc_json','publish_result_json','error_message','retry_count','progress_percent','current_step','validation_json','provider_snapshot_json','visual_approved_at','completed_at','lock_token','lock_expires_at','revision','visual_qc_json','diversity_qc_json','publish_verification_json','verification_status','category_rules_json'];
         $set=[];$params=[];
         foreach($fields as $k=>$v){
             if(!in_array($k,$allowed,true)) continue;

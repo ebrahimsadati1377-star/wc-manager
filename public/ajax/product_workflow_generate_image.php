@@ -17,8 +17,13 @@ try{
  $provider=$providers->assertReady((string)($d['provider']??$job['provider']));if($provider==='manual')throw new RuntimeException('حالت دستی را از گالری محصول استفاده کنید.');
  $a=(array)$job['analysis_json'];$face=trim((string)$job['face_reference_url']);if($face==='')$face=trim((string)getSetting('baji_face_reference_url',''));
  $name=(string)($a['name']??$job['product_name']);$backgrounds=['clean premium studio','soft daylight interior','minimal fashion boutique','neutral architectural background','bright editorial studio','clean urban fashion setting','warm minimal studio'];$bg=$backgrounds[($index-1)%count($backgrounds)];
- $style='Keep the garment fully visible and unobstructed.';if(str_contains($name,'شومیز')||str_contains($name,'تیشرت')||str_contains($name,'پیراهن'))$style.=' Pair with a tasteful different pant or skirt.';elseif(str_contains($name,'شلوار'))$style.=' Pair with a simple different top.';
- $instructions='BAJI professional ecommerce catalog photography. Preserve the exact garment from the product reference. Do not change color, pattern, fabric appearance, seams, pockets, buttons, zipper, collar, hood, length, proportions or silhouette. Use a natural attractive Iranian female fashion model. One model only, one frame only, no collage, no grid, no text. Photorealistic anatomy and fabric. '.$style.' Background: '.$bg.'.';
+ $categoryRules=(array)($job['category_rules_json']??[]);
+ if(!$categoryRules){
+   $categoryRules=(new ProductCategoryRuleService())->resolve($job,$a);
+   $repo->update($jobId,['category_rules_json'=>$categoryRules]);
+ }
+ $constraints=implode(' ',(array)($categoryRules['prompt_constraints']??[]));
+ $instructions='BAJI professional ecommerce catalog photography. '.$constraints.' Use a natural attractive Iranian female fashion model. Garment fidelity has priority over styling. Background: '.$bg.'.';
  $args=['product_name'=>$name,'product_reference_image'=>(string)$job['raw_product_image_url'],'aspect_ratio'=>'9:16','wordpress_upload'=>true,'provider'=>$provider,'instructions'=>$instructions];
  if($face!=='')$args['face_reference_image']=$face;
  $started=microtime(true);$gen=new ProductImageGenerator();

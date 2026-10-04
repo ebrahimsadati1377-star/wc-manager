@@ -322,7 +322,7 @@ require __DIR__ . '/partials/header.php';
               <label class="form-label fw-bold mb-0">Workflow حرفه‌ای BAJI</label>
               <span class="badge text-bg-dark" id="aiProviderBadge"><?= e(strtoupper($productImageProvider)) ?></span>
             </div>
-            <div class="small text-muted mb-2">ورودی → تحلیل → ۷ عکس مستقل → QC → SEO → Preview → انتشار</div>
+            <div class="small text-muted mb-2">ورودی → تحلیل → ۷ عکس مستقل → QC فنی + Visual + Diversity → SEO → Preview → انتشار → Verification</div>
             <label class="form-label small mb-1">عکس خام محصول</label>
             <input type="file" id="aiRawProductImage" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm mb-2">
             <label class="form-label small mb-1">چهره مرجع BAJI (اختیاری)</label>
@@ -337,7 +337,7 @@ require __DIR__ . '/partials/header.php';
             <div class="row g-2">
               <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiAnalyzeBtn" disabled>۱. تحلیل</button></div>
               <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiImagesBtn" disabled>۲. ساخت ۷ عکس</button></div>
-              <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiQcBtn" disabled>۳. QC</button></div>
+              <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiQcBtn" disabled>۳. QC حرفه‌ای</button></div>
               <div class="col-6"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="aiSeoBtn" disabled>۴. SEO</button></div>
               <div class="col-12"><button type="button" class="btn btn-sm btn-outline-success w-100" id="aiPreviewBtn" disabled>۵. پیش‌نمایش نهایی</button></div>
             </div>
