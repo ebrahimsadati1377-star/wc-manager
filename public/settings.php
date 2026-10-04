@@ -20,6 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fallbackEnabled = !empty($_POST['product_image_fallback_enabled']) ? '1' : '0';
     $fallbackProvider = trim($_POST['product_image_fallback_provider'] ?? 'openai');
     $qcRetryLimit = (string)max(0, min(5, (int)($_POST['product_qc_retry_limit'] ?? 2)));
+    $visualQcMinScore = (string)max(50, min(100, (int)($_POST['product_visual_qc_min_score'] ?? 85)));
+    $diversityMinScore = (string)max(50, min(100, (int)($_POST['product_diversity_min_score'] ?? 75)));
     $previewRequired = !empty($_POST['product_preview_before_publish']) ? '1' : '0';
 
     if ($ck === '') $ck = (string)getSetting('consumer_key');
@@ -42,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     setSetting('product_image_fallback_enabled', $fallbackEnabled);
     setSetting('product_image_fallback_provider', in_array($fallbackProvider, ['arena','openai'], true) ? $fallbackProvider : 'openai');
     setSetting('product_qc_retry_limit', $qcRetryLimit);
+    setSetting('product_visual_qc_min_score', $visualQcMinScore);
+    setSetting('product_diversity_min_score', $diversityMinScore);
     setSetting('product_preview_before_publish', $previewRequired);
     setSetting('required_product_images_count', '7');
 
@@ -150,6 +154,14 @@ require __DIR__ . '/partials/header.php';
             <div class="col-md-4">
               <label class="form-label">حداکثر Retry هر عکس</label>
               <input type="number" min="0" max="5" name="product_qc_retry_limit" class="form-control" value="<?= (int)getSetting('product_qc_retry_limit', '2') ?>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">حداقل امتیاز Visual QC</label>
+              <input type="number" min="50" max="100" name="product_visual_qc_min_score" class="form-control" value="<?= (int)getSetting('product_visual_qc_min_score', '85') ?>">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">حداقل امتیاز Diversity</label>
+              <input type="number" min="50" max="100" name="product_diversity_min_score" class="form-control" value="<?= (int)getSetting('product_diversity_min_score', '75') ?>">
             </div>
             <div class="col-12 d-flex gap-4 flex-wrap">
               <div class="form-check">

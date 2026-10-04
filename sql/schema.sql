@@ -81,6 +81,11 @@ CREATE TABLE IF NOT EXISTS `ai_product_jobs` (
   `lock_token` CHAR(36) NULL,
   `lock_expires_at` DATETIME NULL,
   `revision` INT UNSIGNED NOT NULL DEFAULT 1,
+  `visual_qc_json` LONGTEXT NULL,
+  `diversity_qc_json` LONGTEXT NULL,
+  `publish_verification_json` LONGTEXT NULL,
+  `verification_status` VARCHAR(40) NULL,
+  `category_rules_json` LONGTEXT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -139,5 +144,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES
   ('product_image_fallback_provider', 'openai'),
   ('required_product_images_count', '7'),
   ('product_qc_retry_limit', '2'),
+  ('product_visual_qc_min_score', '85'),
+  ('product_diversity_min_score', '75'),
   ('product_preview_before_publish', '1')
 ON DUPLICATE KEY UPDATE setting_key = setting_key;

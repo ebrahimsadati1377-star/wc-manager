@@ -177,11 +177,21 @@
   function enableStageButtons(state) {
     if (workflowBusy) return;
     [aiAnalyzeBtn, aiImagesBtn, aiQcBtn, aiSeoBtn, aiPreviewBtn].filter(Boolean).forEach(btn => btn.disabled = true);
-    if (!workflowJobId || state === 'published') return;
+    if (!workflowJobId || ['published','published_verified','published_with_issues'].includes(state)) return;
     aiAnalyzeBtn.disabled = false;
-    if (['analyzed','images_generating','images_ready','needs_review','qc_passed','seo_ready','preview_ready'].includes(state)) aiImagesBtn.disabled = false;
-    if (['images_ready','needs_review','qc_passed','seo_ready','preview_ready'].includes(state)) aiQcBtn.disabled = false;
-    if (['qc_passed','seo_ready','preview_ready'].includes(state)) aiSeoBtn.disabled = false;
+
+    const afterAnalysis = [
+      'analyzed','images_generating','images_ready','needs_review','qc_passed',
+      'visual_passed','visual_manual_required','diversity_passed','seo_ready','preview_ready'
+    ];
+    const afterImages = [
+      'images_ready','needs_review','qc_passed',
+      'visual_passed','visual_manual_required','diversity_passed','seo_ready','preview_ready'
+    ];
+
+    if (afterAnalysis.includes(state)) aiImagesBtn.disabled = false;
+    if (afterImages.includes(state)) aiQcBtn.disabled = false;
+    if (['diversity_passed','seo_ready','preview_ready'].includes(state)) aiSeoBtn.disabled = false;
     if (['seo_ready','preview_ready'].includes(state)) aiPreviewBtn.disabled = false;
   }
 
@@ -342,18 +352,85 @@
     });
   }
 
+  function renderVisualFailures(visual) {
+    const failed = (visual.images || []).filter(x => x.pass === false);
+    if (!failed.length) return;
+    aiPreviewBox.classList.remove('d-none');
+    aiPreviewBox.innerHTML =
+      '<div class="alert alert-danger p-2 mb-2">Visual QC ایراد واقعی در لباس یا کیفیت تصویر پیدا کرد.</div>' +
+      failed.map(check => {
+        const idx = parseInt(check.image_index, 10);
+        const img = images[idx - 1];
+        const issues = (check.issues || []).join('، ');
+        return '<div class="border rounded p-2 mb-2 bg-white">' +
+          (img ? '<img src="' + escapeHtml(img.src) + '" class="w-100 rounded mb-2" style="aspect-ratio:9/16;object-fit:cover">' : '') +
+          '<div class="small text-danger mb-1">تصویر ' + idx + ' • امتیاز ' + escapeHtml(check.score) + '</div>' +
+          '<div class="small mb-2">' + escapeHtml(issues || 'عدم تطابق بصری') + '</div>' +
+          '<button type="button" class="btn btn-sm btn-outline-danger w-100 aiRetryImageBtn" data-index="' + idx + '">بازسازی همین عکس</button>' +
+          '</div>';
+      }).join('');
+    aiPreviewBox.querySelectorAll('.aiRetryImageBtn').forEach(btn => {
+      btn.addEventListener('click', () => retryWorkflowImage(parseInt(btn.dataset.index, 10)));
+    });
+  }
+
+  function renderDiversityFailures(diversity) {
+    const pairs = diversity.actionable_pairs || diversity.too_similar_pairs || [];
+    if (!pairs.length) return;
+    aiPreviewBox.classList.remove('d-none');
+    aiPreviewBox.innerHTML =
+      '<div class="alert alert-warning p-2 mb-2">بعضی عکس‌ها از نظر کادر، ژست یا بک‌گراند بیش از حد شبیه هم هستند.</div>' +
+      pairs.map(pair => {
+        const similarity = pair.perceptual_similarity != null
+          ? (' • شباهت ' + Math.round(pair.perceptual_similarity * 100) + '%')
+          : ' • ژست/بک‌گراند/زاویه تکراری';
+        return '<div class="border rounded p-2 mb-2 bg-white small">' +
+          'تصاویر ' + escapeHtml(pair.a) + ' و ' + escapeHtml(pair.b) +
+          similarity +
+          '<button type="button" class="btn btn-sm btn-outline-danger w-100 mt-2 aiRetryImageBtn" data-index="' + escapeHtml(pair.b) + '">بازسازی تصویر ' + escapeHtml(pair.b) + '</button>' +
+          '</div>';
+      }).join('');
+    aiPreviewBox.querySelectorAll('.aiRetryImageBtn').forEach(btn => {
+      btn.addEventListener('click', () => retryWorkflowImage(parseInt(btn.dataset.index, 10)));
+    });
+  }
+
   async function runWorkflowQc() {
     await ensureWorkflowStarted();
-    workflowStatus('۳/۵ — کنترل ۹:۱۶، رزولوشن، حجم و تصاویر تکراری...', 62, 'primary');
-    const result = await aiJson('ajax/product_workflow_qc.php', {job_id: workflowJobId});
-    if (!result.qc?.all_technical_pass) {
-      renderQcFailures(result.qc || {});
+
+    workflowStatus('۳/۵ — QC فنی: نسبت، رزولوشن، حجم و تکراری نبودن...', 60, 'primary');
+    const technical = await aiJson('ajax/product_workflow_qc.php', {job_id: workflowJobId});
+    if (!technical.qc?.all_technical_pass) {
+      renderQcFailures(technical.qc || {});
       enableStageButtons('needs_review');
       throw new Error('QC فنی رد شد. عکس‌های مشکل‌دار را بازسازی کن.');
     }
-    workflowStatus('QC فنی هر ۷ تصویر پاس شد.', 68, 'success');
-    enableStageButtons('qc_passed');
-    return result.qc;
+
+    workflowStatus('۳/۵ — Visual QC: تطبیق لباس، رنگ، جزئیات و طبیعی بودن...', 68, 'primary');
+    const visualResult = await aiJson('ajax/product_workflow_visual_qc.php', {job_id: workflowJobId});
+    const visual = visualResult.visual_qc || {};
+    if (visual.available && visual.all_visual_pass === false) {
+      renderVisualFailures(visual);
+      enableStageButtons('needs_review');
+      throw new Error('Visual QC رد شد. فقط عکس‌های مشکل‌دار را بازسازی کن.');
+    }
+
+    workflowStatus('۳/۵ — کنترل تنوع ژست، زاویه و شباهت ۷ عکس...', 73, 'primary');
+    const diversityResult = await aiJson('ajax/product_workflow_diversity.php', {job_id: workflowJobId});
+    const diversity = diversityResult.diversity || {};
+    if (!diversity.all_diversity_pass) {
+      renderDiversityFailures(diversity);
+      enableStageButtons('needs_review');
+      throw new Error('تنوع ۷ عکس کافی نیست. عکس‌های خیلی شبیه را بازسازی کن.');
+    }
+
+    if (visual.manual_review_required && !visual.available) {
+      workflowStatus('QC فنی و تنوع پاس شد؛ Visual QC خودکار در دسترس نیست و بررسی بصری در Preview اجباری است.', 77, 'warning');
+    } else {
+      workflowStatus('QC فنی، Visual QC و کنترل تنوع هر ۷ تصویر پاس شد.', 77, 'success');
+    }
+    enableStageButtons('diversity_passed');
+    return {technical: technical.qc, visual, diversity};
   }
 
   async function buildWorkflowSeo() {
@@ -385,6 +462,13 @@
   function renderWorkflowPreview(p) {
     aiPreviewBox.classList.remove('d-none');
 
+    const visual = p.visual_qc || {};
+    const diversity = p.diversity_qc || {};
+    const visualLabel = visual.available
+      ? ('Visual QC: ' + (visual.all_visual_pass ? 'PASS' : 'FAIL'))
+      : 'Visual QC: بررسی دستی در Preview';
+    const diversityLabel = 'Diversity: ' + escapeHtml(diversity.score ?? '-') + '/100';
+
     const cards = (p.images || []).map(img => {
       const idx = parseInt(img.image_index, 10);
       return '<div class="col-6 mb-2"><div class="border rounded p-1 bg-white">' +
@@ -400,6 +484,10 @@
       '<div class="fw-bold mb-1">' + escapeHtml(p.name) + '</div>' +
       '<div class="small text-muted mb-2">قیمت اصلی: ' + escapeHtml(p.regular_price || '-') +
       ' • تخفیف: ' + escapeHtml(p.sale_price || '-') + '</div>' +
+      '<div class="d-flex flex-wrap gap-1 mb-2">' +
+      '<span class="badge text-bg-light border">' + escapeHtml(visualLabel) + '</span>' +
+      '<span class="badge text-bg-light border">' + diversityLabel + '</span>' +
+      '</div>' +
       '<div class="row g-1">' + cards + '</div>' +
       '<hr class="my-2">' +
       '<div class="small mb-1"><strong>SEO:</strong> ' + escapeHtml(p.seo_title || '') + '</div>' +
@@ -462,7 +550,20 @@
         approved: true
       });
       sessionStorage.removeItem(workflowStorageKey);
-      workflowStatus('محصول با موفقیت منتشر شد.', 100, 'success');
+      const verification = result.result?.verification || {};
+      if (verification.verified) {
+        workflowStatus('محصول منتشر و Verification نهایی با موفقیت پاس شد.', 100, 'success');
+      } else {
+        workflowStatus('محصول منتشر شد اما Verification نیاز به بررسی دارد.', 100, 'warning');
+      }
+      if (verification.verification_status) {
+        aiPreviewBox.insertAdjacentHTML(
+          'beforeend',
+          '<div class="alert ' + (verification.verified ? 'alert-success' : 'alert-warning') +
+          ' p-2 mt-2 mb-0 small">Verification: ' +
+          escapeHtml(verification.verification_status) + '</div>'
+        );
+      }
       if (result.result?.permalink) {
         aiPreviewBox.insertAdjacentHTML(
           'beforeend',
@@ -508,9 +609,14 @@
       const state = await aiJson('ajax/product_workflow_status.php', {job_id: saved});
       const jobState = state.job?.workflow_status || 'draft_input';
 
-      if (jobState === 'published') {
+      if (['published','published_verified','published_with_issues'].includes(jobState)) {
         sessionStorage.removeItem(workflowStorageKey);
-        workflowStatus('این Workflow قبلاً منتشر شده است.', 100, 'success');
+        const verification = state.job?.publish_verification_json || {};
+        if (jobState === 'published_verified' || verification.verified) {
+          workflowStatus('این Workflow قبلاً منتشر و Verification شده است.', 100, 'success');
+        } else {
+          workflowStatus('این Workflow قبلاً منتشر شده ولی Verification نیاز به بررسی دارد.', 100, 'warning');
+        }
         return;
       }
 

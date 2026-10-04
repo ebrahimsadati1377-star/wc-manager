@@ -1,7 +1,7 @@
 <?php
 class ProductWorkflowSchema
 {
-    private const VERSION = 2;
+    private const VERSION = 3;
 
     public static function ensure(): void
     {
@@ -53,6 +53,11 @@ class ProductWorkflowSchema
             'lock_token' => "CHAR(36) NULL",
             'lock_expires_at' => "DATETIME NULL",
             'revision' => "INT UNSIGNED NOT NULL DEFAULT 1",
+            'visual_qc_json' => "LONGTEXT NULL",
+            'diversity_qc_json' => "LONGTEXT NULL",
+            'publish_verification_json' => "LONGTEXT NULL",
+            'verification_status' => "VARCHAR(40) NULL",
+            'category_rules_json' => "LONGTEXT NULL",
         ];
         self::ensureColumns($db, 'ai_product_jobs', $jobColumns);
 
@@ -109,6 +114,8 @@ class ProductWorkflowSchema
             'product_image_fallback_provider' => 'openai',
             'required_product_images_count' => '7',
             'product_qc_retry_limit' => '2',
+            'product_visual_qc_min_score' => '85',
+            'product_diversity_min_score' => '75',
             'product_preview_before_publish' => '1',
         ] as $key => $value) {
             if (getSetting($key, null) === null) setSetting($key, $value);

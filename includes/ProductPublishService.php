@@ -31,9 +31,32 @@ class ProductPublishService {
         $focus=(string)($seo['focus_keyword']??$payload['name']);
         foreach($images as $img){$this->wc->updateMedia((int)$img['wordpress_media_id'],['alt_text'=>$focus.' - تصویر '.(int)$img['image_index'],'title'=>$payload['name'].' - تصویر '.(int)$img['image_index']]);}
         $result=['product_id'=>$productId,'permalink'=>(string)($body['permalink']??''),'status'=>(string)($body['status']??''),'published_at'=>date('c')];
-        $this->repo->update($jobId,['product_id'=>$productId,'workflow_status'=>'published','current_step'=>'published','progress_percent'=>100,'visual_approved_at'=>date('Y-m-d H:i:s'),'completed_at'=>date('Y-m-d H:i:s'),'publish_result_json'=>$result,'error_message'=>null]);
+        $this->repo->update($jobId,['product_id'=>$productId,'workflow_status'=>'published','current_step'=>'published','progress_percent'=>96,'visual_approved_at'=>date('Y-m-d H:i:s'),'completed_at'=>date('Y-m-d H:i:s'),'publish_result_json'=>$result,'error_message'=>null]);
         $this->repo->event($jobId,'info','published','Product published to WooCommerce.',['product_id'=>$productId]);
         logActivity('product_workflow_published',(string)$productId,$payload['name']);
+
+        try {
+            $verification=(new ProductPublishVerificationService($this->repo,$this->wc))->verify($jobId,$productId);
+        } catch (Throwable $verificationError) {
+            $verification=[
+                'verified'=>false,
+                'verification_status'=>'verification_error',
+                'error'=>mb_substr($verificationError->getMessage(),0,500),
+                'product_id'=>$productId,
+                'verified_at'=>date('c'),
+            ];
+            $this->repo->update($jobId,[
+                'workflow_status'=>'published_with_issues',
+                'current_step'=>'published_with_issues',
+                'progress_percent'=>100,
+                'publish_verification_json'=>$verification,
+                'verification_status'=>'verification_error',
+                'error_message'=>'محصول منتشر شد اما Verification کامل نشد.'
+            ]);
+            $this->repo->event($jobId,'warning','publish_verification_error',$verification['error']);
+        }
+
+        $result['verification']=$verification;
         return $result;
     }
 
