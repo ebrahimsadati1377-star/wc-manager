@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
-require_once __DIR__ . '/../../includes/BasalamChatSmsNotifier.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -25,6 +24,7 @@ if (!is_string($raw) || $raw === '' || strlen($raw) > 262144) {
     echo json_encode(['success' => false, 'error' => 'invalid_body']);
     exit;
 }
+
 $payload = json_decode($raw, true);
 if (!is_array($payload) || json_last_error() !== JSON_ERROR_NONE) {
     http_response_code(400);
@@ -32,25 +32,48 @@ if (!is_array($payload) || json_last_error() !== JSON_ERROR_NONE) {
     exit;
 }
 
-try {
-    $notifier = new BasalamChatSmsNotifier();
-    $result = $notifier->handle($payload);
-
-    if (isset($result['message_id'])) {
-        logActivity(
-            'basalam_chat_sms',
-            'message:' . (int)$result['message_id'],
-            'status=' . (string)($result['status'] ?? 'unknown')
-        );
-    }
-
-    http_response_code(200);
-    echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-} catch (InvalidArgumentException $e) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'invalid_payload']);
-} catch (Throwable $e) {
-    error_log('[wc-manager] Basalam chat SMS webhook failed: ' . $e->getMessage());
+$spoolDir = __DIR__ . '/../../storage/basalam-chat-spool';
+if (!is_dir($spoolDir) && !@mkdir($spoolDir, 0700, true) && !is_dir($spoolDir)) {
     http_response_code(503);
-    echo json_encode(['success' => false, 'error' => 'temporary_failure']);
+    echo json_encode(['success' => false, 'error' => 'queue_unavailable']);
+    exit;
 }
+
+try {
+    $name = 'chat-' . date('Ymd-His') . '-' . bin2hex(random_bytes(8)) . '.json';
+} catch (Throwable $e) {
+    $name = 'chat-' . date('Ymd-His') . '-' . uniqid('', true) . '.json';
+}
+
+$file = $spoolDir . '/' . $name;
+if (@file_put_contents($file, $raw, LOCK_EX) === false) {
+    http_response_code(503);
+    echo json_encode(['success' => false, 'error' => 'queue_write_failed']);
+    exit;
+}
+@chmod($file, 0600);
+
+$worker = realpath(__DIR__ . '/../../bin/basalam-chat-worker.php');
+if (!$worker || !function_exists('exec')) {
+    @unlink($file);
+    http_response_code(503);
+    echo json_encode(['success' => false, 'error' => 'worker_unavailable']);
+    exit;
+}
+
+$cmd = '/usr/bin/php ' . escapeshellarg($worker) . ' ' . escapeshellarg($file)
+    . ' > /dev/null 2>&1 & echo $!';
+$output = [];
+$code = 0;
+@exec($cmd, $output, $code);
+$pid = isset($output[0]) ? (int)$output[0] : 0;
+
+if ($code !== 0 || $pid <= 0) {
+    @unlink($file);
+    http_response_code(503);
+    echo json_encode(['success' => false, 'error' => 'worker_start_failed']);
+    exit;
+}
+
+http_response_code(200);
+echo json_encode(['success' => true, 'status' => 'queued'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
